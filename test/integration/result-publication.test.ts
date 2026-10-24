@@ -16,13 +16,24 @@ function fileBarrier(file: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		// libuv on Windows compares long event paths against this watch path; expand TEMP's 8.3 aliases.
 		const watcher = fs.watch(fs.realpathSync.native(path.dirname(file)), check);
-		const deadline = setTimeout(() => { watcher.close(); reject(new Error(`Missing barrier: ${file}`)); }, 15_000);
-		function check() {
-			if (!fs.existsSync(file)) return;
+		// Watch events are hints: creation can race watch registration or be coalesced.
+		// Poll the actual barrier condition as a bounded fallback, not a longer timeout.
+		const poll = setInterval(check, 50);
+		const deadline = setTimeout(() => finish(new Error(`Missing barrier: ${file}`)), 15_000);
+		let settled = false;
+		function finish(error?: Error) {
+			if (settled) return;
+			settled = true;
 			clearTimeout(deadline);
+			clearInterval(poll);
 			watcher.close();
-			resolve();
+			if (error) reject(error);
+			else resolve();
 		}
+		function check() {
+			if (fs.existsSync(file)) finish();
+		}
+		watcher.once("error", finish);
 		check();
 	});
 }
@@ -247,6 +258,16 @@ describe("native runner result publication", { skip: !available ? "pi packages u
 			return Reflect.apply(watch, fs, [watched, ...args]);
 		}) as typeof fs.watch);
 		const file = path.join(alias, "ready");
+		const ready = fileBarrier(file);
+		fs.writeFileSync(file, "");
+		await ready;
+	});
+	it("observes a barrier even when the filesystem watch misses its creation", async (t) => {
+		const directory = path.join(tempDir, "barrier-missed-hint");
+		fs.mkdirSync(directory);
+		const watch = fs.watch;
+		t.mock.method(fs, "watch", ((watched) => watch(watched, () => {})) as typeof fs.watch);
+		const file = path.join(directory, "ready");
 		const ready = fileBarrier(file);
 		fs.writeFileSync(file, "");
 		await ready;
