@@ -1,49 +1,93 @@
-name: Release
+name: Publish
 
 on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: npm-release
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: github.repository == 'raviy06/pi-subagents' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'raviy06/pi-subagents' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
-    # Configure required reviewers on this fork's release environment before dispatch.
-    environment: release
+    timeout-minutes: 25
+    environment: npm
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    env:
+      PACKAGE_NAME: '@raviy06/pi-subagents'
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require successful main CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          count="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$sha&event=push&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | length')"
+          test "$count" -gt 0
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
-      - name: Install devDependencies
-        run: npm ci --ignore-scripts
-      - name: Run tests
-        run: npm run typecheck && npm run test:all
-      - name: Build published package
-        run: npm run build:pkg
-      - name: Verify fork release identity
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check:release
+      - run: npm run typecheck && npm run test:all
+      - run: npm run build:pkg
+      - run: npm run check:release -- --packed
+      - name: Check registry (only 404 means unpublished)
+        id: registry
+        run: node scripts/npm-status.mjs >> "$GITHUB_OUTPUT"
+      - name: Upgrade npm for trusted publishing
+        if: steps.registry.outputs.needs_publish == 'true'
+        run: npm install -g npm@11
+      - name: Publish with OIDC provenance
+        if: steps.registry.outputs.needs_publish == 'true'
+        # Configure the scoped npm trusted publisher for this repo, release.yml,
+        # and environment npm. No registry-url placeholder or long-lived npm token.
+        run: npm publish ./dist-pkg --provenance --access public
+      - name: Pack release artifact
+        run: npm pack ./dist-pkg --ignore-scripts
+      - name: Create fork GitHub release after npm publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.registry.outputs.version }}
         run: |
           node --input-type=module - <<'JS'
-          import assert from 'node:assert/strict';
           import fs from 'node:fs';
-          const source = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const packed = JSON.parse(fs.readFileSync('dist-pkg/package.json', 'utf8'));
-          assert.equal(source.private, true);
-          assert.equal(packed.name, '@raviy06/pi-subagents');
-          assert.equal(packed.version, source.version);
-          assert.equal(packed.private, undefined);
-          assert.ok(fs.readFileSync('CHANGELOG.md', 'utf8').includes(`## [${packed.version}] - `));
+          const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split('\n');
+          const start = lines.findIndex(line => line.startsWith(`## [${process.env.VERSION}] - `));
+          if (start < 0) throw new Error('Missing release notes');
+          const tail = lines.slice(start + 1);
+          const end = tail.findIndex(line => line.startsWith('## '));
+          fs.writeFileSync('/tmp/release-notes.md', (end < 0 ? tail : tail.slice(0, end)).join('\n'));
           JS
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11
-      - name: Publish to npm
-        # Configure this scoped package's trusted publisher for this repository,
-        # release.yml, and the release environment. No upstream token is reused.
-        run: npm publish ./dist-pkg --provenance --access public
+          tag="fork-v$VERSION"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$PACKAGE_NAME $VERSION" --notes-file /tmp/release-notes.md
+          fi
+          gh release upload "$tag" ./*.tgz --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-${{ steps.registry.outputs.version }}
+          path: '*.tgz'
+          if-no-files-found: error
+          retention-days: 14

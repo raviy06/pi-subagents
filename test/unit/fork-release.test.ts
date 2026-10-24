@@ -39,11 +39,15 @@ test("fork legacy installer refuses mutation even when invoked with --remove", (
 	} finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-test("manual fork release is repository-gated and verifies the built package before publishing", () => {
+test("fork publishing requires successful main CI and verifies its protected scoped artifact", () => {
 	const workflow = read(".github/workflows/release.yml");
 	assert.match(workflow, /workflow_dispatch:/);
 	assert.match(workflow, /github\.repository == 'raviy06\/pi-subagents'/);
-	assert.match(workflow, /environment: release/);
+	assert.match(workflow, /workflow_run:/);
+	assert.match(workflow, /environment: npm/);
+	assert.match(workflow, /conclusion == 'success'/);
+	assert.match(workflow, /Require successful main CI for this exact commit/);
+	assert.doesNotMatch(workflow, /pull_request_target/);
 	assert.match(workflow, /@raviy06\/pi-subagents/);
 	assert.match(workflow, /npm publish \.\/dist-pkg --provenance --access public/);
 });

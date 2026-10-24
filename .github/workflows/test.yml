@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
 
 # A new push to a PR branch supersedes its running checks. Other runs get a unique group,
 # because a shared group would queue main runs and drop all but the newest pending one.
@@ -271,3 +275,78 @@ jobs:
           path: ${{ runner.temp }}/standalone-evidence.tar.gz
           if-no-files-found: error
           retention-days: 7
+
+  release-checks:
+    name: Package and release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Require a new version on every PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            npm run check:release -- --base "$BASE_SHA"
+          else
+            npm run check:release
+          fi
+      - run: npm run build:pkg
+      - run: npm run check:release -- --packed
+      - run: npm pack ./dist-pkg --ignore-scripts --json
+
+  workflows:
+    name: Workflow validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  ci:
+    name: CI
+    if: always()
+    needs: [test, calendar-timezones, worktree-cleanup-recovery, schedule-claim-contention, native-nested-wait, native-mcp-readiness, bun-workflow-script, runner-loader-capability, clean-install, official-standalone, release-checks, workflows, codeql]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every check to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const jobs=JSON.parse(process.env.RESULTS); const failed=Object.entries(jobs).filter(([,job])=>job.result!=="success"); if(failed.length){console.error(failed); process.exit(1)}'

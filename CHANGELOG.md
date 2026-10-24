@@ -10,13 +10,20 @@ changes below were already present in that baseline.
 
 ### Fork changes
 
+- Fix the official npm-background smoke to resolve the scoped installed package
+  rather than the old upstream node_modules path.
+- Add PR version/release validation, workflow lint, CodeQL and a stable aggregate
+  CI gate while retaining the existing platform/native smoke matrix.
+- Publish only after successful main CI plus protected npm-environment approval,
+  with exact-commit verification, provenance, registry idempotency and fork tags.
+
 - Add bounded, read-only `activityStatus` v1 over RPC with stable opaque child
   identities, observed execution/activity, own reported usage, timing evidence,
   nested relations, and explicit incomplete/unavailable metadata.
 - Keep existing execution, permissions, FleetView, and RPC surfaces unchanged.
 - Fix test fixture path collisions and missed-watch-hint test barriers without
   altering production recovery behavior. Pin development validation to Node 24.
-- Use a scoped package identity and guarded manual fork release workflow.
+- Use a scoped package identity and guarded CI-gated fork release workflow.
   Retire the legacy shared-directory installer; activation uses Pi's package
   manager and must replace, not duplicate, the upstream extension.
 

@@ -55,6 +55,7 @@
   ],
   "scripts": {
     "build:pkg": "node scripts/build-package.mjs",
+    "check:release": "node scripts/check-release.mjs --name @raviy06/pi-subagents",
     "pack:pkg": "npm run build:pkg && npm pack ./dist-pkg",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",
