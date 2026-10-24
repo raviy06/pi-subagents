@@ -643,13 +643,21 @@ describe("nested control routing", () => {
 				{ id: "source", sessionFile },
 				{ id: "replacement", sessionFile, revivedFrom: "source" },
 			]), accepted);
+			// Short ids such as "r5" can match macOS /var/folders/r5 ancestors,
+			// prematurely satisfying the run-directory check instead of testing hop limits.
+			const chainId = randomUUID();
+			const replacementId = (hop: number) => `replacement-${chainId}-${hop}`;
 			const chain = (hops: number): RunSpec[] => [
 				{ id: "source", sessionFile },
-				...Array.from({ length: hops }, (_, index) => ({ id: `r${index + 1}`, sessionFile, revivedFrom: index === 0 ? "source" : `r${index}` })),
+				...Array.from({ length: hops }, (_, index) => {
+					const id = replacementId(index + 1);
+					assert.ok(!fs.realpathSync(sessionFile).split(path.sep).includes(id), "replacement fixture must not own an ancestor directory");
+					return { id, sessionFile, revivedFrom: index === 0 ? "source" : replacementId(index) };
+				}),
 			];
-			assert.match(await resume(root, "r2", chain(2)), accepted);
-			assert.match(await resume(root, "r8", chain(8)), accepted);
-			assert.match(await resume(root, "r9", chain(9)), refused);
+			assert.match(await resume(root, replacementId(2), chain(2)), accepted);
+			assert.match(await resume(root, replacementId(8), chain(8)), accepted);
+			assert.match(await resume(root, replacementId(9), chain(9)), refused);
 		}));
 
 		it("refuses when the source is missing, out of scope, live, stopped, owns another file, or forms a cycle", () => withRoot(async (root) => {
