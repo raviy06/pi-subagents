@@ -112,6 +112,26 @@ or ask: "Check whether subagents and intercom are set up correctly."
 
 For installed-version help, use `/subagents-guide [topic]` or `subagent({ action: "guide", options: { topic: "workflows" } })`. The default topic is `overview`; available topics are `overview`, `workflows`, `agents`, `missions`, `observability`, `tool-reference`, `configuration`, `models`, `watchdog`, `extension-api`, and `council`.
 
+## Development validation
+
+Use Node 24 for this fork's test suite, matching the upstream CI major version.
+`.nvmrc` pins the locally verified version; this is a development/test choice,
+not a change to the extension's runtime support policy.
+
+```sh
+nvm install
+nvm use
+npm ci --ignore-scripts
+npm run typecheck
+npm run test:all
+npm run build:pkg
+```
+
+Use `npm run build:pkg` for the distributable; do not publish the private source
+package. Fork package identity, version/changelog, and publication setup must be
+prepared before a release PR. Never run the upstream package and its fork as two
+extensions in the same pi session.
+
 ## Documentation
 
 The full reference lives in `docs/`:
