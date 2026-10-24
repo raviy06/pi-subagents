@@ -13,20 +13,37 @@ concurrency:
 
 jobs:
   publish:
+    if: github.repository == 'raviy06/pi-subagents' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Waits for the maintainer's approval on GitHub before anything is published.
+    # Configure required reviewers on this fork's release environment before dispatch.
     environment: release
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - name: Install devDependencies
         run: npm ci --ignore-scripts
       - name: Run tests
-        run: npm run test:all
+        run: npm run typecheck && npm run test:all
       - name: Build published package
         run: npm run build:pkg
+      - name: Verify fork release identity
+        run: |
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const source = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const packed = JSON.parse(fs.readFileSync('dist-pkg/package.json', 'utf8'));
+          assert.equal(source.private, true);
+          assert.equal(packed.name, '@raviy06/pi-subagents');
+          assert.equal(packed.version, source.version);
+          assert.equal(packed.private, undefined);
+          assert.ok(fs.readFileSync('CHANGELOG.md', 'utf8').includes(`## [${packed.version}] - `));
+          JS
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11
       - name: Publish to npm
-        run: npm publish ./dist-pkg --provenance
+        # Configure this scoped package's trusted publisher for this repository,
+        # release.yml, and the release environment. No upstream token is reused.
+        run: npm publish ./dist-pkg --provenance --access public

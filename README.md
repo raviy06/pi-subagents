@@ -2,7 +2,16 @@
   <img src="https://raw.githubusercontent.com/nicobailon/pi-subagents/main/banner.png" alt="pi-subagents" width="1100">
 </p>
 
-# pi-subagents
+# @raviy06/pi-subagents
+
+A thin fork of [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents),
+adding a structured activity API for companion UIs. Upstream authorship and MIT
+license are preserved. See [fork maintenance and activation](docs/fork-maintenance.md).
+
+The fork replaces upstream at runtime; **do not load both**. Upstream documentation
+below retains original terminology and examples: use `@raviy06/pi-subagents`
+instead of `pi-subagents` for package imports/install sources in fork consumers.
+Tool names, event channels, and configuration keys intentionally remain unchanged.
 
 `pi-subagents` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
 
@@ -11,10 +20,13 @@
 ## Install
 
 ```bash
-pi install npm:pi-subagents
+# After the scoped fork has been published and upstream has been disabled:
+pi install npm:@raviy06/pi-subagents@0.81.1
 ```
 
-That is the only required step. pi-subagents needs Pi 1.2.0 or newer. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 1.2.0 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
+For an unpublished local build, follow the activation checklist linked above;
+this documentation does not attest that the scoped package is already on npm.
+The underlying extension needs Pi 1.2.0 or newer. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 1.2.0 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
 
 ## Try this first
 

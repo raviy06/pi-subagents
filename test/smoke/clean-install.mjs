@@ -11,8 +11,10 @@ const source = fileURLToPath(new URL("../../", import.meta.url));
 const version = process.argv[3] ?? "1.2.0";
 const supportedVersions = ["1.2.0"];
 assert.ok(supportedVersions.includes(version), `requires a supported smoke version: ${supportedVersions.join(", ")}`);
-const root = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), "clean-install-smoke-"));
-fs.mkdirSync(root, { recursive: true });
+const requestedRoot = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), "clean-install-smoke-"));
+fs.mkdirSync(requestedRoot, { recursive: true });
+// Host peer resolution canonicalizes paths; normalize /var vs /private/var on macOS too.
+const root = fs.realpathSync.native(requestedRoot);
 const host = path.join(root, "host");
 const extension = path.join(root, "extension");
 const cwd = path.join(root, "cwd");
@@ -49,9 +51,11 @@ assert.ok(packed.files.some(file => file.path === "bundle/index.js"), "bundled e
 assert.ok(packed.files.some(file => file.path === "src/inspectors/inspector-runner.js"), "compiled inspector runner must ship");
 assert.ok(packed.files.some(file => file.path === "src/runs/background/subagent-runner-bootstrap.js"), "compiled background bootstrap must ship");
 assert.ok(packed.files.some(file => file.path === "src/runs/background/subagent-runner.js"), "compiled background execution module must ship");
-fs.writeFileSync(path.join(extension, "package.json"), JSON.stringify({ private: true, dependencies: { "pi-subagents": `file:${path.join(root, packed.filename)}` } }));
+const packageName = JSON.parse(fs.readFileSync(path.join(source, "dist-pkg/package.json"), "utf8")).name;
+assert.equal(packageName, "@raviy06/pi-subagents", "smoke must install the fork, not upstream");
+fs.writeFileSync(path.join(extension, "package.json"), JSON.stringify({ private: true, dependencies: { [packageName]: `file:${path.join(root, packed.filename)}` } }));
 run("extension-install", "npm", ["install", "--no-audit", "--no-fund"], extension);
-const installed = path.join(extension, "node_modules/pi-subagents");
+const installed = path.join(extension, "node_modules", ...packageName.split("/"));
 const inspectorRun = path.join(root, "inspector-run");
 fs.mkdirSync(inspectorRun);
 fs.writeFileSync(path.join(inspectorRun, "status.json"), JSON.stringify({
