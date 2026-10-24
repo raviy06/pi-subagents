@@ -1,3 +1,5 @@
+export type { ActivityEntry, ActivityStatus, PublicActivityState } from "../runs/shared/activity-status-model.ts";
+
 export {
 	DEFAULT_FORK_PREAMBLE,
 	wrapForkTask,

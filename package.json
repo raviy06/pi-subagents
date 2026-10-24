@@ -1,6 +1,6 @@
 {
-  "name": "pi-subagents",
-  "version": "0.81.0",
+  "name": "@raviy06/pi-subagents",
+  "version": "0.81.1",
   "private": true,
   "description": "Pi extension for single-agent delegation and scripted multi-agent workflows",
   "author": "Nico Bailon",
@@ -26,11 +26,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicobailon/pi-subagents.git"
+    "url": "git+https://github.com/raviy06/pi-subagents.git"
   },
-  "homepage": "https://github.com/nicobailon/pi-subagents#readme",
+  "homepage": "https://github.com/raviy06/pi-subagents#readme",
   "bugs": {
-    "url": "https://github.com/nicobailon/pi-subagents/issues"
+    "url": "https://github.com/raviy06/pi-subagents/issues"
   },
   "keywords": [
     "pi-package",
@@ -42,9 +42,6 @@
     "agents",
     "cli"
   ],
-  "bin": {
-    "pi-subagents": "install.mjs"
-  },
   "files": [
     "index.ts",
     "src/**/*.ts",
@@ -58,6 +55,7 @@
   ],
   "scripts": {
     "build:pkg": "node scripts/build-package.mjs",
+    "check:release": "node scripts/check-release.mjs --name @raviy06/pi-subagents",
     "pack:pkg": "npm run build:pkg && npm pack ./dist-pkg",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",

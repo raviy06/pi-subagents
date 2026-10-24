@@ -21,6 +21,7 @@ import {
 	type SubagentChildStatusEvent,
 } from "../shared/types.ts";
 import { sanitizeDisplayText, truncateDisplayText } from "../shared/display-text.ts";
+import { ACTIVITY_STATUS_VERSION, buildActivityStatus } from "../runs/shared/activity-status-projection.ts";
 import { readStatus } from "../shared/utils.ts";
 import { SubagentFlatParams } from "./schemas.ts";
 import { disabledFeatureUseError, type DisabledFeatureSurface } from "../shared/disabled-features.ts";
@@ -455,6 +456,7 @@ function pingData(ctx: ExtensionContext | null, options: RegisterSubagentRpcBrid
 			statusProjection: { version: 1, untargeted: "in-memory-when-ready", targeted: "executor" },
 			managementActions: enabledManagementActions(options),
 			fleetStatus: { version: 1 },
+			activityStatus: { version: ACTIVITY_STATUS_VERSION },
 			asyncStatusSnapshot: { kind: ASYNC_STATUS_SNAPSHOT_KIND, version: ASYNC_STATUS_SNAPSHOT_VERSION },
 			asyncSpawn: true,
 			steer: true,
@@ -760,6 +762,7 @@ async function handleRequest(
 					details: { mode: "management", results: [] },
 					fleet,
 					asyncSnapshot,
+					activity: buildActivityStatus(options.state, sessionId, options.now?.()),
 				};
 			}
 		}
@@ -779,6 +782,7 @@ async function handleRequest(
 				sessionId,
 			),
 			asyncSnapshot: buildAsyncStatusSnapshotForState(options.state, sessionId),
+			activity: buildActivityStatus(options.state, sessionId, options.now?.()),
 		};
 	}
 	if (request.method === "steer") {

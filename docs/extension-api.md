@@ -165,6 +165,77 @@ The DTO intentionally never exposes run, async, or tool IDs. Clients must ignore
 
 `data.asyncSnapshot` is a separate bounded projection included on successful status replies when available. Its `runs[].id` contains the async run id; unlike the fleet DTO, it is not an opaque display key. Fleet keys remain opaque and must not be interpreted as run or async identifiers.
 
+### Activity status DTO (fork addition)
+
+When `ping.capabilities.activityStatus` is `{ version: 1 }`, both untargeted and
+targeted `status` replies additionally carry `data.activity`. Existing fleet and
+async snapshot contracts are unchanged.
+
+```ts
+{
+  version: 1,
+  scope: "current-session",
+  generatedAt: 123456789,
+  available: true,
+  entries: [{
+    key: "activity-<opaque-digest>",
+    agent: "worker",
+    state: "running",
+    activity: { tool: "read", observedAt: 123456700 },
+    elapsedMs: 2000,
+    usage: { input: 100, output: 20, source: "reported-own" }
+  }],
+  incomplete: false,
+  omitted: { active: 0, recent: 0, children: 0, scanTruncated: false }
+}
+```
+
+`available: false` means the owner has no matching restored projection for the
+current session. It is not proof that no work exists. Consumers must not convert
+unavailability, omission, or disappearance into successful completion.
+
+Entries represent observed agent children, not workflow shell processes. Their
+keys are opaque display identities derived by the owner from session/run/child
+identity. They remain stable across repeated snapshots and restored retained
+records of the same attempt; a new run gets a new identity. Never decode keys or
+use them as stop/steer/inspect targets. Optional `parentKey` uses the same identity
+space. `parentOmitted` indicates a missing/pruned parent relation; cycles are
+pruned and mark the snapshot incomplete.
+
+States: `queued`, `running`, `paused`, `stopping`, `completed`, `failed`, `stopped`,
+`unknown`. Pending maps to queued; partial/rejected maps to failed. A remembered
+`detached` result without a corresponding live observation maps to unknown, not
+completed. Stop requests only produce stopping for still-active source states.
+`activity.reason: "needs-attention"` preserves the owner's attention observation
+without inventing human approval or paused execution. An old activity timestamp
+alone never marks a quiet child stalled.
+
+Optional elapsed time uses source duration/end evidence for terminal states and
+start-to-snapshot time for live running/stopping states. Missing terminal timing
+stays absent. Usage contains only reported own input/output fields. It does not
+fall back to workflow/run aggregate tokens or context-window counts. Restored
+foreground history and nested summaries may not retain this split usage, so
+consumers must display unavailable rather than zero. Raw prompts, tool arguments,
+paths, transcripts, control tokens and arbitrary descriptions are not exported.
+
+This projector is read-only and does no disk I/O, reconciliation or model work.
+It reads already-loaded foreground controls/history and async/fleet/nested state.
+Live foreground observations win over workflow references and remembered
+foreground rows; native async state wins over retained async duplicates. The
+existing scoped ownership rules permit async runs inherited through authorized
+in-process session succession; unrelated session data is filtered out.
+
+Bounds: 1,024 source visits, 64 output entries, nested depth four, 32 KiB serialized
+snapshot, 96-character agent names and 64-character tool names. Source order is
+bounded before sorting; attention/failure/paused rows then active rows precede
+ordinary terminal history. Omission counters describe known omitted rows/branches;
+when `scanTruncated` is true, they are lower bounds, not an exact total. Recent
+history is only what the owner still retains, not a durable ledger.
+
+Types are exported through `pi-subagents/shared-types`: `ActivityStatus`,
+`ActivityEntry`, and `PublicActivityState`. This fork addition does not add task
+tracking, modify delegation or grant any execution authority.
+
 ### Scope
 
 `pi.events` is in-process only. It does not reach separate Pi processes or child subagents; use the file lifecycle artifacts or `pi-intercom` for cross-process coordination.

@@ -2,7 +2,16 @@
   <img src="https://raw.githubusercontent.com/nicobailon/pi-subagents/main/banner.png" alt="pi-subagents" width="1100">
 </p>
 
-# pi-subagents
+# @raviy06/pi-subagents
+
+A thin fork of [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents),
+adding a structured activity API for companion UIs. Upstream authorship and MIT
+license are preserved. See [fork maintenance and activation](docs/fork-maintenance.md).
+
+The fork replaces upstream at runtime; **do not load both**. Upstream documentation
+below retains original terminology and examples: use `@raviy06/pi-subagents`
+instead of `pi-subagents` for package imports/install sources in fork consumers.
+Tool names, event channels, and configuration keys intentionally remain unchanged.
 
 `pi-subagents` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
 
@@ -11,10 +20,13 @@
 ## Install
 
 ```bash
-pi install npm:pi-subagents
+# After the scoped fork has been published and upstream has been disabled:
+pi install npm:@raviy06/pi-subagents@0.81.1
 ```
 
-That is the only required step. pi-subagents needs Pi 1.2.0 or newer. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 1.2.0 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
+For an unpublished local build, follow the activation checklist linked above;
+this documentation does not attest that the scoped package is already on npm.
+The underlying extension needs Pi 1.2.0 or newer. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 1.2.0 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
 
 ## Try this first
 
@@ -111,6 +123,26 @@ For bounded orchestration, `maxSubagentSpawnsPerRun` limits cumulative logical c
 or ask: "Check whether subagents and intercom are set up correctly."
 
 For installed-version help, use `/subagents-guide [topic]` or `subagent({ action: "guide", options: { topic: "workflows" } })`. The default topic is `overview`; available topics are `overview`, `workflows`, `agents`, `missions`, `observability`, `tool-reference`, `configuration`, `models`, `watchdog`, `extension-api`, and `council`.
+
+## Development validation
+
+Use Node 24 for this fork's test suite, matching the upstream CI major version.
+`.nvmrc` pins the locally verified version; this is a development/test choice,
+not a change to the extension's runtime support policy.
+
+```sh
+nvm install
+nvm use
+npm ci --ignore-scripts
+npm run typecheck
+npm run test:all
+npm run build:pkg
+```
+
+Use `npm run build:pkg` for the distributable; do not publish the private source
+package. Fork package identity, version/changelog, and publication setup must be
+prepared before a release PR. Never run the upstream package and its fork as two
+extensions in the same pi session.
 
 ## Documentation
 

@@ -128,7 +128,26 @@ describe("subagent extension RPC bridge", () => {
 			{ version: 1 },
 		);
 		assert.ok((reply as { data: { methods?: string[] } }).data.methods?.includes("cost"));
+		assert.deepEqual((reply as any).data.capabilities.activityStatus, { version: 1 });
 
+		bridge.dispose();
+	});
+
+	it("exposes activity on both status paths with the injected clock and no control changes", async () => {
+		const events = new FakeEvents();
+		const state = { currentSessionId: "S1", statusProjectionSessionId: "S1", foregroundControls: new Map([["private-run", { runId: "private-run", sessionId: "S1", mode: "single", currentAgent: "worker", currentIndex: 0, startedAt: 100, updatedAt: 200, currentTool: "read", inputTokens: 10, outputTokens: 2 }]]), asyncJobs: new Map() } as any;
+		let executions = 0;
+		const bridge = registerSubagentRpcBridge({ events, state, now: () => 500, getContext: () => ctx("S1", "S1"), execute: async () => { executions++; return { content: [{ type: "text", text: "status" }], details: { mode: "management", results: [] } } as any; } });
+		for (const params of [undefined, { id: "private-run" }]) {
+			const reply = await request(events, params ? "targeted-activity" : "activity", "status", params);
+			assert.ok(reply.success);
+			const activity = (reply as any).data.activity;
+			assert.equal(activity.available, true); assert.equal(activity.generatedAt, 500);
+			assert.equal(activity.entries.length, 1); assert.equal(activity.entries[0].elapsedMs, 400);
+			assert.equal(activity.entries[0].state, "running");
+			assert.deepEqual(activity.entries[0].usage, { input: 10, output: 2, source: "reported-own" });
+		}
+		assert.equal(executions, 1);
 		bridge.dispose();
 	});
 
