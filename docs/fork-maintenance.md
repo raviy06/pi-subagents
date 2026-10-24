@@ -67,7 +67,8 @@ Verify the version is newer than fork main and not already published before merg
    requiring `npm` environment approval. Manual dispatch on main is a recovery
    option; it also requires successful main CI for that exact commit. The workflow
    checks out that commit, revalidates/builds, treats only npm HTTP 404 as absent,
-   and skips republishing existing versions. It publishes with provenance/public
+   and skips republishing existing versions. Superseded main commits and new
+   versions older than npm's current latest are refused. It publishes with provenance/public
    scoped access and creates a `fork-v<version>` GitHub release (distinct from
    inherited upstream tags). PR workflows never trigger publication.
 6. Verify the actual npm version before telling users to update.

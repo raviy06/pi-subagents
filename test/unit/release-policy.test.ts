@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { validateRelease, newerVersion } from "../../scripts/check-release.mjs";
-import { versionExists } from "../../scripts/npm-status.mjs";
+import { versionExists, assertPublishOrder } from "../../scripts/npm-status.mjs";
 
 function fixture() {
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"release-policy-"));
@@ -45,6 +45,14 @@ test("version policy rejects stale/downgrade versions and invalid semver",()=>{
  assert.equal(newerVersion("0.1.0","0.1.0"),false);
  assert.equal(newerVersion("0.0.9","0.1.0"),false);
  assert.throws(()=>newerVersion("0.1.1\nevil","0.1.0"),/stable semantic version/);
+});
+test("release order never moves npm latest backwards",async()=>{
+ const fake=(status,version)=>async()=>({status,ok:status===200,json:async()=>({version})});
+ await assertPublishOrder("@owner/extension","0.1.1",fake(404));
+ await assertPublishOrder("@owner/extension","0.1.1",fake(200,"0.1.0"));
+ await assert.rejects(assertPublishOrder("@owner/extension","0.1.1",fake(200,"0.2.0")),/Refusing/);
+ await assert.rejects(assertPublishOrder("@owner/extension","0.1.1",fake(200,"0.1.1")),/Refusing/);
+ await assert.rejects(assertPublishOrder("@owner/extension","0.1.1",fake(500)),/registry/);
 });
 test("registry absence is only a 404; auth/server/invalid responses fail closed",async()=>{
  const fake=(status,version="0.1.1")=>async()=>({status,ok:status===200,json:async()=>({version})});
