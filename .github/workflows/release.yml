@@ -32,7 +32,7 @@ jobs:
     env:
       PACKAGE_NAME: '@raviy06/pi-subagents'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
@@ -46,7 +46,7 @@ jobs:
           test "$sha" = "$main_sha" || { echo "Refusing superseded main commit"; exit 1; }
           count="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$sha&event=push&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | length')"
           test "$count" -gt 0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -87,7 +87,7 @@ jobs:
             gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$PACKAGE_NAME $VERSION" --notes-file /tmp/release-notes.md
           fi
           gh release upload "$tag" ./*.tgz --clobber
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: npm-package-${{ steps.registry.outputs.version }}
           path: '*.tgz'
