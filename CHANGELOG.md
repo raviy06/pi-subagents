@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.81.5] - 2026-10-25
+
+### Changed
+
+- Upgrade the development TypeScript compiler from 5.9.3 to 7.0.2.
+- Remove the obsolete baseUrl option from the public consumer typecheck fixture;
+  its path mappings are already absolute. Preserve the consumer API regression
+  check rather than skipping it for the compiler upgrade.
+
 ## [0.81.1] - 2026-10-24
 
 First release prepared for the `@raviy06/pi-subagents` fork, based on upstream
