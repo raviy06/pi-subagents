@@ -46,8 +46,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Install devDependencies
@@ -66,7 +66,7 @@ jobs:
           NODE_DISABLE_COMPILE_CACHE: '1'
           PI_SUBAGENTS_TERMINAL_EVIDENCE_DIR: ${{ runner.temp }}/1906-terminal-evidence
         run: node --experimental-strip-types --import ./test/support/register-loader.mjs --test ${{ matrix.testArgs }} test/integration/*.test.ts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: shared-cwd-terminal-${{ matrix.label }}
@@ -77,8 +77,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
@@ -89,8 +89,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
@@ -101,8 +101,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
@@ -117,8 +117,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
@@ -138,8 +138,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
@@ -155,8 +155,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
@@ -180,8 +180,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
@@ -195,14 +195,14 @@ jobs:
       matrix:
         pi-version: ["1.2.0"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
       - run: npm ci --ignore-scripts
       - name: Real Pi ${{ matrix.pi-version }} background child smoke
         run: node --experimental-strip-types test/smoke/clean-install.mjs "${{ runner.temp }}/clean-install-smoke-${{ matrix.pi-version }}" ${{ matrix.pi-version }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: clean-install-smoke-logs-${{ matrix.pi-version }}
@@ -216,8 +216,8 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Install controller dependencies and isolation tool
@@ -257,7 +257,7 @@ jobs:
           find . -type d \( -name package -o -name cache -o -name bun-cache -o -name home -o -name agent -o -name assets -o -name theme -o -name export-html \) -prune -o -type f \( -name '*.log' -o -name '*.jsonl' -o -name status.json -o -name process-terminal.json -o -name identity.json -o -name '*result.json' -o -name '*notification*.json' -o -name '*witness.json' -o -name '*competition.json' -o -name launch.json -o -name '*failure.json' -o -name launch-error.json \) -print0 > "$RUNNER_TEMP/standalone-files"
           tar --null -czf "$RUNNER_TEMP/standalone-evidence.tar.gz" --files-from "$RUNNER_TEMP/standalone-files"
           test "$(stat -c %s "$RUNNER_TEMP/standalone-evidence.tar.gz")" -le 33554432
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: official-standalone-receipt
@@ -268,7 +268,7 @@ jobs:
             ${{ runner.temp }}/npm-background/npm-launch.json
           if-no-files-found: warn
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.evidence.outcome == 'success'
         with:
           name: official-standalone-lifecycle
@@ -281,11 +281,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -313,7 +313,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
         run: node scripts/release-intent.mjs > "$RUNNER_TEMP/release-intent.json"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           name: release-intent
@@ -327,7 +327,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: actionlint
@@ -346,7 +346,7 @@ jobs:
       matrix:
         language: [javascript-typescript, actions]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: github/codeql-action/init@v4
