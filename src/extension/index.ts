@@ -14,6 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 import { registerActivityFoundations } from "../runs/shared/activity-foundations.ts";
+import { createRosterRuntime } from "../roster/runtime.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -848,10 +849,13 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		}
 	});
 
+	// Fork addition (roster): teams from agentRoster.teams become team.<name> workflow resources per session.
+	const rosterRuntime = createRosterRuntime();
 	const disposeSlashCommands = slashCommandsEnabled ? registerSlashCommands(pi, state, {
 		fleetKeybindings: config.fleetKeybindings,
 		foregroundDetachShortcut,
 		workflowScriptsDisabled: disabledFeatures.features.has("workflow-scripts"),
+		rosterRuntime,
 	}) : { dispose: () => {} };
 
 	let visibleControlNotices = new Set<string>();
@@ -1252,9 +1256,11 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		rpcBridge.emitReady(ctx);
 		supervisorChannel.start();
 		supervisorChannel.activateTransport();
+		rosterRuntime.bind({ sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd });
 	});
 
 	pi.on("session_shutdown", async (event) => {
+		rosterRuntime.dispose();
 		cancelCompactionResume();
 		completionNotifier.sessionShutdown(event?.reason);
 		parentWake.sessionShutdown(event?.reason);

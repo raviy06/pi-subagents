@@ -28,6 +28,8 @@ import type { SlashSubagentResponse, SlashSubagentUpdate } from "./slash-bridge.
 import { registerPromptWorkflowCommands } from "./prompt-workflows.ts";
 import { collectSubagentCost, formatSubagentCostReport } from "./subagent-cost.ts";
 import { openSubagentsAdmin } from "./subagents-admin.ts";
+import { registerRosterCommands } from "../roster/commands.ts";
+import type { RosterRuntime } from "../roster/runtime.ts";
 import { SUBAGENT_GUIDE_TOPICS } from "../extension/subagent-guide.ts";
 import { getInspectorPlugins } from "../inspectors/plugins.ts";
 import {
@@ -613,6 +615,8 @@ export function registerSlashCommands(
 		foregroundDetachShortcut?: string;
 		/** disabledFeatures "workflow-scripts": /run launches its one child directly instead of through a script. */
 		workflowScriptsDisabled?: boolean;
+		/** Fork addition (roster): when present, registers /roster bound to this session's team runtime. */
+		rosterRuntime?: RosterRuntime;
 	} = {},
 ): { dispose: () => void } {
 	let fleetOpen = false;
@@ -652,6 +656,10 @@ export function registerSlashCommands(
 			await openSubagentsAdmin(pi, ctx, args);
 		},
 	});
+
+	if (options.rosterRuntime) {
+		registerRosterCommands(pi, state, { runtime: options.rosterRuntime, runCommand, openAgentAdmin: openSubagentsAdmin });
+	}
 
 	pi.registerCommand("run", {
 		description: "Run one subagent through a workflow script: /run agent[output=file] [task] [--bg] [--fork]",
