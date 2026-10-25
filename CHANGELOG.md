@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.81.4] - 2026-10-25
+
+### Changed
+
+- Update oxlint and @oxlint/plugins from 1.80.0 to 1.89.0.
+- Retain Pi SDK 1.2.0 and TypeBox 1.3.27 development pins so minimum-host
+  compatibility coverage and provider diagnostic semantics remain unchanged.
+  The grouped update intentionally does not migrate the host SDK baseline.
+
 ## [0.81.1] - 2026-10-24
 
 First release prepared for the `@raviy06/pi-subagents` fork, based on upstream
