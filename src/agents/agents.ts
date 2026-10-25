@@ -951,16 +951,16 @@ export function findConfiguredProjectRoot(cwd: string): string | null {
 	return gitProjectRoot ?? configuredGitRoot ?? nearestRoot;
 }
 
-function getUserAgentSettingsPath(): string {
+export function getUserAgentSettingsPath(): string {
 	return path.join(getAgentDir(), "settings.json");
 }
 
-function getProjectAgentSettingsPath(cwd: string): string | null {
+export function getProjectAgentSettingsPath(cwd: string): string | null {
 	const projectRoot = findConfiguredProjectRoot(cwd);
 	return projectRoot ? path.join(getProjectConfigDir(projectRoot), "settings.json") : null;
 }
 
-function readSettingsFileStrict(filePath: string): Record<string, unknown> {
+export function readSettingsFileStrict(filePath: string): Record<string, unknown> {
 	if (!fs.existsSync(filePath)) return {};
 	let raw: string;
 	try {
@@ -983,7 +983,7 @@ function readSettingsFileStrict(filePath: string): Record<string, unknown> {
 	return parsed as Record<string, unknown>;
 }
 
-function writeSettingsFile(filePath: string, settings: Record<string, unknown>): void {
+export function writeSettingsFile(filePath: string, settings: Record<string, unknown>): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	const targetPath = resolveSettingsWriteTarget(filePath);
 	let existingMode: number | undefined;
