@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added (roster)
+
+- `/roster`: overview of every agent grouped by source with its model chain (primary →
+  fallbacks), thinking and provenance flags; teams with their launch form; `agent <name>`
+  (delegates to the `/subagents` admin, which gains a *Change fallbacks* action),
+  `team <name>` (definition plus compiled workflow), `team add|remove` (confirmed settings
+  write), `run <team> <task>` (background launch) and `reload`.
+- Teams as data under `agentRoster.teams` in user/project settings (project wins by name),
+  compiled statically to workflow scripts with literal keys and registered per session as
+  `team.<name>` named workflow resources with no host authority. Shapes: `parallel`,
+  `pipeline`, `council` (independent positions → chair synthesis → bounded cross-examination
+  by resuming members). See [docs/roster.md](docs/roster.md).
+- `fallbacks` frontmatter is serialized by the agent editor and shown on capability rows.
+
 ### Added (roster foundations)
 
 - Read-only agent catalogue over RPC: `manage` actions `agents.list`, `agents.get` and
