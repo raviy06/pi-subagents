@@ -21,7 +21,7 @@ Tool names, event channels, and configuration keys intentionally remain unchange
 
 ```bash
 # After the scoped fork has been published and upstream has been disabled:
-pi install npm:@raviy06/pi-subagents@0.81.5
+pi install npm:@raviy06/pi-subagents
 ```
 
 For an unpublished local build, follow the activation checklist linked above;
