@@ -341,6 +341,14 @@ Prompt modes keep their fixed keys. For example, `Esc` still cancels steer text 
 
 Controls the under-editor widget for active background runs. It defaults to `true`, including when FleetView is enabled, so active work remains visible after reload. Set it to `false` to hide this widget while keeping FleetView available.
 
+## `activityTaskPreview` (fork addition)
+
+```json
+{ "activityTaskPreview": true }
+```
+
+Controls whether public `activityStatus` entries (read by companion UIs such as `pi-agent-activity`) carry a sanitized, at most 120-character preview of each child's task. Defaults to `true`. Set it to `false` to keep every prompt-derived text out of the snapshot; tool arguments, paths and labels are never exported either way. See [extension API](extension-api.md#activity-status-dto-fork-addition).
+
 ## `asyncWidgetCollapsed`
 
 ```json

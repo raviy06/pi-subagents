@@ -109,7 +109,7 @@
 
 ## Phase 2 — Roster module (`src/roster/`, same repo)
 
-Starts after Phase 1 merges. Tasks (to be expanded then):
+Done (PR #11). Delivered as: R1 `settings.ts`, R2 catalogue via `handleList` capability rows + `overview.ts`, R3 assignments *are* `agentOverrides` (edited through the `/subagents` admin, now with *Change fallbacks*) — no projection layer, R4 `teams.ts` + `register.ts` (user shape files deferred), R5 text-first `/roster` in `commands.ts` + `runtime.ts`, R6 not needed (pi-minimal `activity` slot stays with `pi-agent-activity`), R7 wiring + `docs/roster.md`. Original task list:
 - R1 `src/roster/settings.ts` — merged `agentRoster` resolver (project over user), schema validation, diff rendering.
 - R2 `src/roster/catalog.ts` — catalogue view over `discoverCatalog` with provenance (reuses `AgentCapabilityRow.provenance` from T1).
 - R3 `src/roster/assignments.ts` — assignment → `subagents.agentOverrides` projection with confirm-before-write.
