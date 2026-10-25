@@ -1300,6 +1300,34 @@ Answer only from the supplied synthetic text.
 		assert.doesNotMatch(failure, /failed: Run fan-out:/);
 	});
 
+	it("executes a roster team through its team.<name> workflow resource (fork)", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		const ctx = makeMinimalCtx(tempDir);
+		const { registerTeamResources } = await import("../../src/roster/register.ts");
+		const registration = registerTeamResources({
+			sessionId: ctx.sessionManager.getSessionId(),
+			teams: { pair: { name: "pair", shape: "parallel", members: [{ agent: "reviewer" }, { agent: "scout" }] } },
+			knownAgents: ["reviewer", "scout"],
+		});
+		assert.deepEqual(registration.registered, ["pair"]);
+		const executor = makeExecutor([makeAgent("reviewer"), makeAgent("scout")]);
+		try {
+			mockPi.onCall({ output: "Review done" });
+			mockPi.onCall({ output: "Scan done" });
+			const result = await executor.executePublic("roster-team", { workflow: "team.pair", args: { task: "Look at the auth module" }, async: false }, new AbortController().signal, undefined, ctx);
+			assert.equal(result.isError, undefined, result.content[0]?.text);
+			assert.equal(mockPi.callCount(), 2);
+			assert.equal(result.details.workflow?.receipt?.resource?.name, "team.pair");
+			assert.equal(result.details.workflow?.receipt?.state, "complete");
+			assert.equal(result.details.workflow?.receipt?.entries.reviewer?.agent, "reviewer");
+			assert.equal(result.details.workflow?.receipt?.entries.scout?.agent, "scout");
+			const text = result.content[0]?.text ?? "";
+			assert.match(text, /"team": "pair"|team: "pair"|pair/);
+			const missingTask = await executor.executePublic("roster-team-no-task", { workflow: "team.pair", args: {}, async: false }, new AbortController().signal, undefined, ctx);
+			assert.equal(missingTask.isError, true);
+			assert.match(missingTask.content[0]?.text ?? "", /task/);
+		} finally { registration.dispose(); }
+	});
+
 	it("executes a registered mixed foreground workflow without widening session or child authority", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
 		const ctx = makeMinimalCtx(tempDir);
 		// A persistent session's file path is not its SDK session ID.

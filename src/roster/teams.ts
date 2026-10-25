@@ -8,8 +8,9 @@
  * `subagent({ workflow: "team.<name>", args: { task } })`.
  *
  * Compilation is static: every child key, agent and model is a literal in the script, so the
- * existing workflow validator checks the whole team before anything launches. The task itself is
- * read from `args.task` at run time and never embedded in the script.
+ * existing workflow validator checks the whole team before anything launches. Named resources are
+ * expansions (the executor drops `args` after `resolve`), so the task is embedded as a JSON string
+ * literal; it is never interpolated into code.
  */
 
 export const TEAM_RESOURCE_PREFIX = "team.";
@@ -142,11 +143,11 @@ const MEMBER_BRIEF = "Give your independent position, the strongest evidence for
 const CHAIR_BRIEF = "You chair this council. Do not add new positions. From the member responses below, list agreements, disputed claims that change the recommendation, missing proof, and then one recommendation. Keep every claim attributed to its member.";
 const CHALLENGE_BRIEF = "The chair summarised the council as follows. Respond only to disputed claims that affect the recommendation: concede with reasons, or defend with evidence. Do not restate agreed points.";
 
-function compileParallel(team: TeamDefinition): string {
+function compileParallel(team: TeamDefinition, args: TeamRunArgs): string {
 	const keys = memberKeys(team.members);
 	const children = team.members.map((member, index) => `\t${childLiteral(keys[index]!, member, "task")},`).join("\n");
 	return [
-		`const task = args.task;`,
+		`const task = ${q(args.task)};`,
 		`const results = await runs.all([`,
 		children,
 		`]);`,
@@ -155,9 +156,9 @@ function compileParallel(team: TeamDefinition): string {
 	].join("\n");
 }
 
-function compilePipeline(team: TeamDefinition): string {
+function compilePipeline(team: TeamDefinition, args: TeamRunArgs): string {
 	const keys = memberKeys(team.members);
-	const lines = [`const task = args.task;`, `const stages = [];`];
+	const lines = [`const task = ${q(args.task)};`, `const stages = [];`];
 	team.members.forEach((member, index) => {
 		const variable = `stage${index + 1}`;
 		const taskExpression = index === 0
@@ -170,14 +171,14 @@ function compilePipeline(team: TeamDefinition): string {
 	return lines.join("\n");
 }
 
-function compileCouncil(team: TeamDefinition): string {
+function compileCouncil(team: TeamDefinition, args: TeamRunArgs): string {
 	const chair = team.chair!;
 	const passes = team.passes ?? 2;
 	const keys = memberKeys(team.members);
 	const memberNames = JSON.stringify(team.members.map((member) => member.agent));
 	const chairChild = (key: string, taskExpression: string) => `await runs.run(${q(key)}, { agent: ${q(chair.agent)}${chair.model ? `, model: ${q(chair.model)}` : ""}, task: ${taskExpression} });`;
 	const lines = [
-		`const task = args.task;`,
+		`const task = ${q(args.task)};`,
 		`const members = ${memberNames};`,
 		`const brief = "Council question:\\n" + task;`,
 		`const positions = (round) => members.map((name, index) => "### " + name + "\\n" + round[index].output).join("\\n\\n");`,
@@ -222,17 +223,20 @@ export function parseTeamRunArgs(args: Readonly<Record<string, unknown>>): TeamR
 	return { task: args.task };
 }
 
-/** Compile a team to a workflow script. `args` is validated; the task is read from `args.task` at run time. */
+/** Compile a team to a workflow script with the validated task embedded as a string literal. */
 export function compileTeamScript(team: TeamDefinition, args: TeamRunArgs): string {
 	if (!args.task.trim()) throw new Error("Team workflows need a non-empty task.");
 	switch (team.shape) {
-		case "parallel": return compileParallel(team);
-		case "pipeline": return compilePipeline(team);
-		case "council": return compileCouncil(team);
+		case "parallel": return compileParallel(team, args);
+		case "pipeline": return compilePipeline(team, args);
+		case "council": return compileCouncil(team, args);
 	}
 }
 
-/** Stable version for resource registration: changes whenever the definition changes. */
+/** Workflow receipts accept resource versions from 1 to 1,000,000. */
+export const MAX_TEAM_RESOURCE_VERSION = 1_000_000;
+
+/** Stable version for resource registration: changes whenever the definition changes (bounded for receipts). */
 export function teamDefinitionVersion(team: TeamDefinition): number {
 	const { source: _source, ...definition } = team;
 	const text = JSON.stringify(definition);
@@ -241,5 +245,5 @@ export function teamDefinitionVersion(team: TeamDefinition): number {
 		hash ^= text.charCodeAt(index);
 		hash = Math.imul(hash, 16777619) >>> 0;
 	}
-	return (hash % 2147483646) + 1;
+	return (hash % MAX_TEAM_RESOURCE_VERSION) + 1;
 }

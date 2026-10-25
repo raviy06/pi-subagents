@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	compileTeamScript,
+	MAX_TEAM_RESOURCE_VERSION,
 	mergeTeamSets,
 	parseTeams,
+	teamDefinitionVersion,
 	teamResourceName,
 	TEAM_RESOURCE_PREFIX,
 	type TeamDefinition,
@@ -50,8 +52,13 @@ describe("roster team parsing", () => {
 		assert.equal(merged.a?.source, "user");
 	});
 
-	it("names resources with a stable prefix", () => {
+	it("names resources with a stable prefix and a receipt-safe version", () => {
 		assert.equal(teamResourceName("spec-council"), `${TEAM_RESOURCE_PREFIX}spec-council`);
+		const team: TeamDefinition = { name: "t", shape: "parallel", members: [{ agent: "a" }] };
+		const version = teamDefinitionVersion(team);
+		assert.ok(Number.isInteger(version) && version >= 1 && version <= MAX_TEAM_RESOURCE_VERSION);
+		assert.equal(teamDefinitionVersion({ ...team, source: "project" }), version, "merge source does not change the version");
+		assert.notEqual(teamDefinitionVersion({ ...team, members: [{ agent: "b" }] }), version);
 	});
 });
 
@@ -94,8 +101,8 @@ describe("roster team compilation", () => {
 	it("escapes member names, models and the task safely", () => {
 		const script = compileTeamScript({ name: "t", shape: "parallel", members: [{ agent: 'we"ird' }] }, { task: 'say "hi"\n${x}' });
 		assert.match(script, /agent: "we\\"ird"/);
-		assert.match(script, /args\.task/);
-		assert.doesNotMatch(script, /\$\{x\}/);
+		assert.match(script, /const task = "say \\"hi\\"\\n\$\{x\}";/, "task is a JSON string literal, never interpolated");
+		assert.doesNotMatch(script, /args\.task/);
 	});
 
 	it("duplicate member agents get distinct keys", () => {
