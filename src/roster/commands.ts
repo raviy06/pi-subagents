@@ -251,7 +251,8 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 		}
 		return { agents: names, teams: Object.keys(current?.teams ?? {}), liveRuns };
 	};
-	const unsubscribes: Array<() => void> = [];
+	// Hosts and test doubles may return nothing from pi.on; dispose tolerates that.
+	const unsubscribes: Array<(() => void) | void | undefined> = [];
 	if (options.mentions !== false) {
 		unsubscribes.push(pi.on("input", async (event, ctx) => {
 			if (event.source !== "interactive") return { action: "continue" };
@@ -275,5 +276,5 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 		}));
 	}
 
-	return { dispose() { for (const unsubscribe of unsubscribes.splice(0)) unsubscribe(); } };
+	return { dispose() { for (const unsubscribe of unsubscribes.splice(0)) if (typeof unsubscribe === "function") unsubscribe(); } };
 }
