@@ -354,6 +354,7 @@ export function preservedAgentFrontmatterFields(agent: AgentConfig, cfg: Record<
 	if (hasKey(cfg, "systemPrompt")) changed("systemPrompt");
 	if (hasKey(cfg, "runner")) changed("runner");
 	if (hasKey(cfg, "model")) changed("model");
+	if (hasKey(cfg, "fallbacks")) changed("fallbacks");
 	if (hasKey(cfg, "tools")) changed("tools");
 	if (hasKey(cfg, "excludeTools")) changed("excludeTools");
 	if (hasKey(cfg, "skills")) changed("skill", "skills");
@@ -849,7 +850,7 @@ function agentCapabilityRow(agent: AgentConfig, options: { executable: boolean; 
 		aliases: agent.aliases ? [...agent.aliases] : undefined,
 		runner: agentCapabilityRunner(agent, options.providerNames, options.externalCliAvailability),
 		tools: agentCapabilityTools(agent),
-		model: presentDetails({ value: agent.model, thinking: agent.thinking }),
+		model: presentDetails({ value: agent.model, thinking: agent.thinking, fallbacks: agent.fallbacks?.length ? [...agent.fallbacks] : undefined }),
 		execution: presentDetails({ defaultAsync: agent.defaultAsync, timeoutMs: agent.defaultTimeoutMs }),
 		acceptance: presentDetails({ policy: agent.defaultAcceptance, role: agent.acceptanceRole }),
 		output: presentDetails({ path: agent.output, mode: agent.outputMode }),
