@@ -7,17 +7,25 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { handleManagementAction } from "../agents/agent-management.ts";
+import { discoverAgents } from "../agents/agents.ts";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
+import { buildActivityStatus } from "../runs/shared/activity-status-projection.ts";
+import { canRenderComponents } from "../shared/extension-context.ts";
+import { toModelInfo } from "../shared/model-info.ts";
 import { SLASH_TEXT_RESULT_TYPE, SLASH_TEXT_VIEW_ONLY_DETAILS, type SubagentState } from "../shared/types.ts";
-import { parseTeamAddArgs, renderRosterOverview, renderTeam, rosterRowsFromCapabilities } from "./overview.ts";
+import { buildModelView } from "./model-view.ts";
+import { parseTeamAddArgs, renderRosterOverview, renderTeam, rosterRowsFromCapabilities, type RosterRow } from "./overview.ts";
 import { removeTeam, teamToSettings, writeTeam, type RosterScope } from "./settings.ts";
 import type { RosterRuntime } from "./runtime.ts";
-import { teamResourceName } from "./teams.ts";
+import { teamResourceName, type TeamDefinition } from "./teams.ts";
+import { RosterComponent, type RosterComponentData, type RosterResult, type RosterTab } from "./tui.ts";
 
 export interface RegisterRosterCommandsOptions {
 	runtime: RosterRuntime;
 	runCommand: (ctx: ExtensionContext, params: SubagentParamsLike) => Promise<void>;
 	openAgentAdmin: (pi: ExtensionAPI, ctx: ExtensionContext, args: string) => Promise<void>;
+	/** Whether activity entries carry the task preview (config.activityTaskPreview). */
+	activityTaskPreview?: boolean;
 }
 
 function send(pi: ExtensionAPI, text: string): void {
@@ -51,6 +59,98 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 		}));
 	};
 
+	const writeTeamWithConfirm = async (ctx: ExtensionContext, scope: RosterScope, team: TeamDefinition, names: string[]): Promise<boolean> => {
+		const unknown = [...team.members.map((member) => member.agent), ...(team.chair ? [team.chair.agent] : [])].filter((agent) => !names.includes(agent));
+		const preview = JSON.stringify({ agentRoster: { teams: { [team.name]: teamToSettings(team) } } }, null, 2);
+		const target = scope === "project" ? runtime.state().settings?.projectPath ?? "<project>/.pi/settings.json" : runtime.state().settings?.userPath ?? "~/.pi/agent/settings.json";
+		const confirmed = ctx.hasUI
+			? await ctx.ui.confirm(`Write team '${team.name}' to ${scope} settings?`, `${target}\n\n${preview}${unknown.length ? `\n\nWarning: unknown agents: ${unknown.join(", ")}` : ""}`)
+			: true;
+		if (!confirmed) { ctx.ui.notify("Team not written.", "info"); return false; }
+		const filePath = writeTeam(ctx.cwd, scope, team);
+		const refreshed = runtime.refresh(names);
+		const registeredNote = refreshed.registered.includes(team.name) ? `Launch with subagent({ workflow: "${teamResourceName(team.name)}", args: { task } }).` : `Not registered this session: ${refreshed.warnings.join("; ") || "no session"}.`;
+		send(pi, `Wrote team '${team.name}' (${team.shape}) to ${filePath}.\n${registeredNote}${unknown.length ? `\nWarning: unknown agents: ${unknown.join(", ")}` : ""}`);
+		return true;
+	};
+
+	const runTeam = async (ctx: ExtensionContext, name: string, task: string): Promise<void> => {
+		const current = runtime.state();
+		if (!current.registered.includes(name)) {
+			ctx.ui.notify(current.settings?.teams[name] ? `Team '${name}' is not registered this session (${current.warnings.join("; ") || "try /roster reload"}).` : `No team '${name}'.`, "error");
+			return;
+		}
+		await options.runCommand(ctx, { workflow: teamResourceName(name), args: { task }, async: true });
+	};
+
+	/** Gather every tab's data. Pure views over the catalogue, registry, roster settings and the activity snapshot. */
+	const collect = (ctx: ExtensionContext, rows: RosterRow[], names: string[]): RosterComponentData => {
+		const current = runtime.refresh(names);
+		const registry = ctx.modelRegistry?.getAvailable?.() ?? [];
+		const models = buildModelView({
+			models: registry.map((model) => toModelInfo(model)),
+			agents: rows,
+			modelScope: discoverAgents(ctx.cwd, "both", ctx.model?.provider).modelScope,
+		});
+		const teams = Object.values(current.settings?.teams ?? {}).map((team) => ({ team, registered: current.registered.includes(team.name) }));
+		const runs = buildActivityStatus(state, ctx.sessionManager.getSessionId(), Date.now(), { taskPreview: options.activityTaskPreview !== false }).entries;
+		const warnings = [...current.warnings, ...(current.settings?.diagnostics ?? []).map((diagnostic) => `${diagnostic.scope} ${diagnostic.path}: ${diagnostic.error}`)];
+		return { agents: rows, models, teams, runs, warnings };
+	};
+
+	/** Interactive roster: select in the component, act outside it, reopen on the same tab. */
+	const interactive = async (ctx: ExtensionContext, initialTab: RosterTab = "agents"): Promise<void> => {
+		let tab: RosterTab = initialTab;
+		for (;;) {
+			const { snapshot, names } = catalogueNames(pi, ctx);
+			const data = collect(ctx, snapshot, names);
+			const result = await ctx.ui.custom<RosterResult>((tui, theme, kb, done) => new RosterComponent(tui, theme, kb, { ...data, initialTab: tab, done }), { overlay: false });
+			if (!result || result.kind === "cancel") return;
+			switch (result.kind) {
+				case "agent": tab = "agents"; await options.openAgentAdmin(pi, ctx, result.name); break;
+				case "model": {
+					tab = "models";
+					const row = data.models.rows.find((entry) => entry.id === result.id);
+					const lines = [`Model ${result.id}`, ...(row?.primary.length ? [`Primary for: ${row.primary.join(", ")}`] : []), ...(row?.fallback.length ? [`Fallback for: ${row.fallback.join(", ")}`] : []), ...(row?.inScope === false ? ["Outside the enforced model scope: launches that resolve to it fail or fall back."] : []), "", "Assign it with /roster agent <name> → Change model / Change fallbacks."];
+					send(pi, lines.join("\n"));
+					break;
+				}
+				case "team-add": {
+					tab = "teams";
+					const line = await ctx.ui.input("New team: <name> <shape> <agent[=model],...> [--chair <agent[=model]>] [--passes n] [--description text] [--project]", "");
+					if (!line?.trim()) break;
+					const parsed = parseTeamAddArgs(line.trim().split(/\s+/));
+					if (!parsed.ok) { ctx.ui.notify(parsed.message, "error"); break; }
+					await writeTeamWithConfirm(ctx, parsed.scope, parsed.team, names);
+					break;
+				}
+				case "team": {
+					tab = "teams";
+					const entry = data.teams.find(({ team }) => team.name === result.name);
+					if (!entry) break;
+					const choice = await ctx.ui.select(`Team ${result.name} (${entry.team.shape})`, ["Show compiled workflow", "Run with a task…", `Remove from ${entry.team.source ?? "user"} settings`, "Back"]);
+					if (choice === "Show compiled workflow") send(pi, renderTeam(entry.team));
+					else if (choice === "Run with a task…") {
+						const task = await ctx.ui.input(`Task for team ${result.name}`, "");
+						if (task?.trim()) { await runTeam(ctx, result.name, task.trim()); return; }
+					} else if (choice?.startsWith("Remove")) {
+						const scope: RosterScope = entry.team.source ?? "user";
+						const confirmed = await ctx.ui.confirm(`Remove team '${result.name}' from ${scope} settings?`, "The team definition is deleted from the settings file; nothing else changes.");
+						if (confirmed) {
+							const removed = removeTeam(ctx.cwd, scope, result.name);
+							runtime.refresh(names);
+							send(pi, removed.removed ? `Removed team '${result.name}' from ${removed.path}.` : `No team '${result.name}' in ${removed.path}.`);
+						}
+					}
+					break;
+				}
+				case "run":
+					await options.runCommand(ctx, { action: "status", view: "fleet" });
+					return;
+			}
+		}
+	};
+
 	const teamCommand = async (ctx: ExtensionContext, tokens: string[]): Promise<void> => {
 		const [sub, ...rest] = tokens;
 		if (!sub) { ctx.ui.notify("Usage: /roster team <name> | add ... | remove <name>", "error"); return; }
@@ -58,18 +158,8 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 			const parsed = parseTeamAddArgs(rest);
 			if (!parsed.ok) { ctx.ui.notify(parsed.message, "error"); return; }
 			const { names } = catalogueNames(pi, ctx);
-			const unknown = [...parsed.team.members.map((member) => member.agent), ...(parsed.team.chair ? [parsed.team.chair.agent] : [])].filter((agent) => !names.includes(agent));
-			const preview = JSON.stringify({ agentRoster: { teams: { [parsed.team.name]: teamToSettings(parsed.team) } } }, null, 2);
-			const target = parsed.scope === "project" ? runtime.state().settings?.projectPath ?? "<project>/.pi/settings.json" : runtime.state().settings?.userPath ?? "~/.pi/agent/settings.json";
-			const confirmed = ctx.hasUI
-				? await ctx.ui.confirm(`Write team '${parsed.team.name}' to ${parsed.scope} settings?`, `${target}\n\n${preview}${unknown.length ? `\n\nWarning: unknown agents: ${unknown.join(", ")}` : ""}`)
-				: true;
-			if (!confirmed) { ctx.ui.notify("Team not written.", "info"); return; }
 			try {
-				const filePath = writeTeam(ctx.cwd, parsed.scope, parsed.team);
-				const refreshed = runtime.refresh(names);
-				const registeredNote = refreshed.registered.includes(parsed.team.name) ? `Launch with subagent({ workflow: "${teamResourceName(parsed.team.name)}", args: { task } }).` : `Not registered this session: ${refreshed.warnings.join("; ") || "no session"}.`;
-				send(pi, `Wrote team '${parsed.team.name}' (${parsed.team.shape}) to ${filePath}.\n${registeredNote}${unknown.length ? `\nWarning: unknown agents: ${unknown.join(", ")}` : ""}`);
+				await writeTeamWithConfirm(ctx, parsed.scope, parsed.team, names);
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
@@ -100,7 +190,7 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 		description: "Agent roster: models, fallbacks, teams; /roster team add|remove, /roster run <team> <task>",
 		getArgumentCompletions: (prefix) => {
 			const words = prefix.split(/\s+/);
-			if (words.length === 1) return ["agent", "team", "run", "reload"].filter((word) => word.startsWith(prefix)).map((value) => ({ value, label: value }));
+			if (words.length === 1) return ["agents", "models", "teams", "runs", "agent", "team", "run", "text", "reload"].filter((word) => word.startsWith(prefix)).map((value) => ({ value, label: value }));
 			const [first, second] = words;
 			if (words.length === 2 && (first === "team" || first === "run")) {
 				const teams = Object.keys(runtime.state().settings?.teams ?? {});
@@ -118,8 +208,13 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const [command, ...rest] = tokens;
 			try {
-				if (!command || command === "list" || command === "status") { overview(ctx); return; }
+				if (!command) { if (canRenderComponents(ctx) && ctx.hasUI) await interactive(ctx); else overview(ctx); return; }
+				if (command === "text" || command === "list" || command === "status") { overview(ctx); return; }
 				if (command === "reload") { overview(ctx); return; }
+				if (command === "models" || command === "runs" || (command === "teams" && rest.length === 0) || (command === "agents" && rest.length === 0)) {
+					if (canRenderComponents(ctx) && ctx.hasUI) { await interactive(ctx, command as RosterTab); return; }
+					overview(ctx); return;
+				}
 				if (command === "agent" || command === "agents") {
 					if (!rest[0]) { overview(ctx); return; }
 					await options.openAgentAdmin(pi, ctx, rest.join(" "));
@@ -130,12 +225,7 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 					const [name, ...taskWords] = rest;
 					const task = taskWords.join(" ").trim();
 					if (!name || !task) { ctx.ui.notify("Usage: /roster run <team> <task...>", "error"); return; }
-					const current = runtime.state();
-					if (!current.registered.includes(name)) {
-						ctx.ui.notify(current.settings?.teams[name] ? `Team '${name}' is not registered this session (${current.warnings.join("; ") || "try /roster reload"}).` : `No team '${name}'.`, "error");
-						return;
-					}
-					await options.runCommand(ctx, { workflow: teamResourceName(name), args: { task }, async: true });
+					await runTeam(ctx, name, task);
 					return;
 				}
 				ctx.ui.notify(`Unknown /roster command '${command}'. Use /roster, /roster agent <name>, /roster team ..., /roster run <team> <task>, /roster reload.`, "error");

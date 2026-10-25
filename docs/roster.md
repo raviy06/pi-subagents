@@ -7,6 +7,26 @@ screen; the fork only provides the data and the commands.
 
 ## What you get
 
+`/roster` opens a tabbed view in the TUI (plain text elsewhere, or with `/roster text`):
+
+```
+Roster
+[Agents]   Models   Teams   Runs                       ↑↓ move  Tab ←→ tab  Enter open  Esc close  type to filter
+→ auditor · project · anthropic/claude-opus-5-5:high · high
+  scout   · builtin · devaigateway/gpt-6-sol:high → anthropic/claude-sonnet-5:medium · user override: model, fallbacks
+  worker  · builtin · inherit · disabled
+```
+
+| Tab | Rows | Enter |
+|---|---|---|
+| **Agents** | every agent grouped by source: model chain (primary → fallbacks), thinking, provenance flags | opens the agent admin (model, fallbacks, thinking, prompt) |
+| **Models** | host registry models with the agents that use each as primary/fallback and whether it is inside an enforced `modelScope`; notes list *unregistered* assigned models, agents that *will fall back* and why, and agents on `inherit` | shows who uses the model |
+| **Teams** | `+ Add a team`, then each team with shape, chair, members and registration state | show compiled workflow · run with a task · remove |
+| **Runs** | the current session's activity snapshot: state, task preview, last tool, elapsed, `↷ model (reason)` on fallback | opens the fleet inspector |
+
+`/roster models`, `/roster teams`, `/roster runs` open a tab directly. The view only selects;
+every write happens after it closes, through the same confirmations as the commands below.
+
 | Need | Where |
 |---|---|
 | See every agent, where it came from, and what it runs on | `/roster` |

@@ -617,6 +617,8 @@ export function registerSlashCommands(
 		workflowScriptsDisabled?: boolean;
 		/** Fork addition (roster): when present, registers /roster bound to this session's team runtime. */
 		rosterRuntime?: RosterRuntime;
+		/** Fork addition (roster): config.activityTaskPreview, for the Runs tab. */
+		activityTaskPreview?: boolean;
 	} = {},
 ): { dispose: () => void } {
 	let fleetOpen = false;
@@ -658,7 +660,7 @@ export function registerSlashCommands(
 	});
 
 	if (options.rosterRuntime) {
-		registerRosterCommands(pi, state, { runtime: options.rosterRuntime, runCommand, openAgentAdmin: openSubagentsAdmin });
+		registerRosterCommands(pi, state, { runtime: options.rosterRuntime, runCommand, openAgentAdmin: openSubagentsAdmin, ...(options.activityTaskPreview !== undefined ? { activityTaskPreview: options.activityTaskPreview } : {}) });
 	}
 
 	pi.registerCommand("run", {
