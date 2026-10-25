@@ -110,7 +110,7 @@ function finiteNumber(value: unknown): number | undefined {
 }
 
 function normalizeTask(task: string | undefined): string | undefined {
-	if (typeof task !== "string") return undefined;
+	if (task === undefined) return undefined;
 	const collapsed = task.replace(/\s+/g, " ").trim();
 	if (collapsed.length === 0) return undefined;
 	if (collapsed.length <= RUN_RECORD_TASK_LIMIT) return collapsed;
