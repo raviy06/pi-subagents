@@ -12,7 +12,14 @@ export interface ActivityEntry {
 	activity?: { tool?: string; observedAt?: number; reason?: "needs-attention" };
 	elapsedMs?: number;
 	usage?: { input: number; output: number; source: "reported-own" };
+	/** Fork additions (v1 additive; advertised through `ping.capabilities.activityStatus.fields`). */
+	task?: string;
+	handle?: string;
+	startedAt?: number;
+	model?: { requested?: string; effective?: string; fallbackReason?: string };
 }
+/** Optional entry fields consumers can feature-detect. */
+export const ACTIVITY_ENTRY_OPTIONAL_FIELDS = ["task", "handle", "startedAt", "model"] as const;
 export interface ActivityStatus {
 	version: 1;
 	scope: "current-session";
@@ -34,6 +41,14 @@ export interface ActivityFacts {
 	stopRequested?: boolean;
 	input?: number;
 	output?: number;
+	/** Caller-facing task/goal text; `description` is the field name on run controls and job steps. */
+	description?: string;
+	task?: string;
+	handle?: string;
+	/** Effective launch model (job steps carry it as `model`). */
+	model?: string;
+	requestedModel?: string;
+	fallbackReason?: string;
 }
 export function activityKey(sessionId: string, runId: string, child: string | number): string {
 	return `activity-${createHash("sha256").update(JSON.stringify([sessionId, runId, String(child)])).digest("hex").slice(0, 32)}`;
@@ -61,7 +76,11 @@ export function activityState(facts: ActivityFacts): PublicActivityState {
 export function activeEntry(entry: ActivityEntry): boolean {
 	return ["running", "queued", "stopping", "unknown"].includes(entry.state);
 }
-export function activityEntry(key: string, facts: ActivityFacts, now: number, parentKey?: string): ActivityEntry | undefined {
+export interface ActivityEntryOptions {
+	/** Include a sanitized ≤120-char task preview. Off keeps prompt text out of the public snapshot entirely. */
+	taskPreview?: boolean;
+}
+export function activityEntry(key: string, facts: ActivityFacts, now: number, parentKey?: string, options: ActivityEntryOptions = {}): ActivityEntry | undefined {
 	const agent = safeText(facts.agent, 96);
 	if (!agent) return undefined;
 	const state = activityState(facts);
@@ -74,10 +93,22 @@ export function activityEntry(key: string, facts: ActivityFacts, now: number, pa
 		const end = validCount(facts.endedAt) ? facts.endedAt : ["running", "stopping"].includes(state) ? now : undefined;
 		if (end !== undefined && end >= facts.startedAt) elapsedMs = end - facts.startedAt;
 	}
+	const task = options.taskPreview === false ? undefined : safeText(facts.task ?? facts.description, 120);
+	const handle = safeText(facts.handle, 64);
+	const effective = safeText(facts.model, 128);
+	const requested = safeText(facts.requestedModel, 128);
+	const fallbackReason = safeText(facts.fallbackReason, 32);
+	const model = effective || requested || fallbackReason
+		? { ...(requested ? { requested } : {}), ...(effective ? { effective } : {}), ...(fallbackReason ? { fallbackReason } : {}) }
+		: undefined;
 	return {
 		key, ...(parentKey ? { parentKey } : {}), agent, state,
 		...(tool || observedAt !== undefined || reason ? { activity: { ...(tool ? { tool } : {}), ...(observedAt !== undefined ? { observedAt } : {}), ...(reason ? { reason } : {}) } } : {}),
 		...(elapsedMs !== undefined ? { elapsedMs } : {}),
 		...(validCount(facts.input) && validCount(facts.output) ? { usage: { input: facts.input, output: facts.output, source: "reported-own" as const } } : {}),
+		...(task ? { task } : {}),
+		...(handle ? { handle } : {}),
+		...(validCount(facts.startedAt) ? { startedAt: facts.startedAt } : {}),
+		...(model ? { model } : {}),
 	};
 }

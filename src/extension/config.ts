@@ -184,6 +184,9 @@ function validateConfig(config: Record<string, unknown>): void {
 	if (config.resultScanLogging !== undefined && config.resultScanLogging !== "all" && config.resultScanLogging !== "activity" && config.resultScanLogging !== "off") {
 		throw new Error('config.resultScanLogging must be "all", "activity", or "off"');
 	}
+	if (config.activityTaskPreview !== undefined && typeof config.activityTaskPreview !== "boolean") {
+		throw new Error("config.activityTaskPreview must be a boolean");
+	}
 	if (config.asyncWidgetCollapsed !== undefined && typeof config.asyncWidgetCollapsed !== "boolean") {
 		throw new Error("config.asyncWidgetCollapsed must be a boolean");
 	}

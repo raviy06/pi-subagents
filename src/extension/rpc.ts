@@ -22,6 +22,7 @@ import {
 } from "../shared/types.ts";
 import { sanitizeDisplayText, truncateDisplayText } from "../shared/display-text.ts";
 import { ACTIVITY_STATUS_VERSION, buildActivityStatus } from "../runs/shared/activity-status-projection.ts";
+import { ACTIVITY_ENTRY_OPTIONAL_FIELDS } from "../runs/shared/activity-status-model.ts";
 import { ACTIVITY_CHANGED_EVENT } from "../runs/shared/activity-change-notifier.ts";
 import { RUN_RECORD_ENTRY_TYPE } from "../runs/shared/run-record-entry.ts";
 import { readStatus } from "../shared/utils.ts";
@@ -337,6 +338,8 @@ interface RegisterSubagentRpcBridgeOptions {
 	/** Native live state, projected into the optional public fleet-status capability. */
 	state?: SubagentState;
 	disabledFeatures?: DisabledFeatureSurface;
+	/** Fork addition: include a sanitized task preview on activity entries (default true). */
+	activityTaskPreview?: boolean;
 }
 
 function enabledManagementActions(options: RegisterSubagentRpcBridgeOptions): string[] {
@@ -470,7 +473,7 @@ function pingData(ctx: ExtensionContext | null, options: RegisterSubagentRpcBrid
 			statusProjection: { version: 1, untargeted: "in-memory-when-ready", targeted: "executor" },
 			managementActions: enabledManagementActions(options),
 			fleetStatus: { version: 1 },
-			activityStatus: { version: ACTIVITY_STATUS_VERSION },
+			activityStatus: { version: ACTIVITY_STATUS_VERSION, fields: [...ACTIVITY_ENTRY_OPTIONAL_FIELDS] },
 			agentsCatalog: { version: AGENTS_CATALOGUE_VERSION, actions: Object.keys(CATALOGUE_ACTIONS) },
 			activityEvents: { version: 1, event: ACTIVITY_CHANGED_EVENT },
 			runRecords: { version: 1, entryType: RUN_RECORD_ENTRY_TYPE },

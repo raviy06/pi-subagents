@@ -128,7 +128,7 @@ describe("subagent extension RPC bridge", () => {
 			{ version: 1 },
 		);
 		assert.ok((reply as { data: { methods?: string[] } }).data.methods?.includes("cost"));
-		assert.deepEqual((reply as any).data.capabilities.activityStatus, { version: 1 });
+		assert.deepEqual((reply as any).data.capabilities.activityStatus, { version: 1, fields: ["task", "handle", "startedAt", "model"] });
 
 		bridge.dispose();
 	});

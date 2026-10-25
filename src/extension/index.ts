@@ -740,6 +740,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		execute: executeSubagentReady,
 		state,
 		disabledFeatures,
+		activityTaskPreview: config.activityTaskPreview !== false,
 	});
 
 
