@@ -16,25 +16,28 @@ function fixture() {
  return {root,metadata,options:{repo:"owner/repo",tag:"v0.1.2",target:"a".repeat(40),title:"Package 0.1.2",notesFile:notes,assets:[asset]}};
 }
 function fakeGh(options,metadata,initial,remoteTag,tagObjects={}) {
- let release=initial;const calls=[];
+ let release=initial?{id:101,...initial}:undefined;const calls=[];
  let tag=remoteTag===undefined&&initial&&!initial.draft?{type:"commit",sha:options.target}:remoteTag;
  const run=args=>{
   calls.push(args);
   if(args[0]==="api"){
    const endpoint=args.find(arg=>arg.startsWith("repos/"))??"";
+   if(args.includes("POST")){
+    assert.ok(args.includes("draft=true"));
+    release={id:101,tag_name:options.tag,draft:true,target_commitish:options.target,assets:[],body:fs.readFileSync(options.notesFile,"utf8")};
+    return JSON.stringify(release);
+   }
+   if(args.includes("PATCH")){
+    assert.ok(args.includes("draft=false"));assert.equal(release.assets.length,1);
+    release.draft=false;release.immutable=true;tag??={type:"commit",sha:options.target};
+    return JSON.stringify(release);
+   }
    if(endpoint.includes("/git/matching-refs/"))return tag?JSON.stringify(tag):"";
    if(endpoint.includes("/git/tags/"))return JSON.stringify(tagObjects[endpoint.split("/").at(-1)]);
    return release?JSON.stringify(release):"";
   }
-  if(args[1]==="create"){
-   assert.ok(args.includes("--draft"));
-   release={tag_name:options.tag,draft:true,target_commitish:options.target,assets:[],body:fs.readFileSync(options.notesFile,"utf8")};
-  }else if(args[1]==="upload"){
-   assert.equal(release.draft,true,"assets must be attached while draft");release.assets=[metadata];
-  }else if(args[1]==="edit"&&args.includes("--draft=false")){
-   assert.equal(release.assets.length,1,"cannot publish an empty release");release.draft=false;release.immutable=true;
-   tag??={type:"commit",sha:options.target};
-  }
+  assert.equal(args[1],"upload","Unexpected release command");
+  assert.equal(release.draft,true,"assets must be attached while draft");release.assets=[metadata];
   return "";
  };
  return {run,calls,get release(){return release;},get tag(){return tag;},set tag(value){tag=value;}};
@@ -44,9 +47,31 @@ test("draft creation, asset verification and publication happen in that order",(
   const gh=fakeGh(f.options,f.metadata);
   publishGitHubRelease(f.options,gh.run);
   assert.equal(gh.release.draft,false);
-  const mutations=gh.calls.filter(args=>args[0]==="release");
-  assert.deepEqual(mutations.map(args=>args[1]),["create","upload","edit"]);
-  assert.ok(mutations[2].includes("--draft=false"));
+  const mutations=gh.calls.filter(args=>args[0]==="release"||args.includes("POST")||args.includes("PATCH"));
+  assert.deepEqual(mutations.map(args=>args.includes("POST")?"create":args.includes("PATCH")?"edit":args[1]),["create","upload","edit"]);
+ }finally{fs.rmSync(f.root,{recursive:true,force:true});}
+});
+test("a stale release list after draft creation cannot hide the newly created release",()=>{
+ const f=fixture();try{
+  const gh=fakeGh(f.options,f.metadata);
+  publishGitHubRelease(f.options,args=>{
+   if(args.includes("--paginate")&&gh.release)return "";
+   return gh.run(args);
+  });
+  assert.equal(gh.release.draft,false);
+  assert.ok(gh.calls.some(args=>args.some(arg=>arg.startsWith("repos/owner/repo/releases/101"))));
+ }finally{fs.rmSync(f.root,{recursive:true,force:true});}
+});
+test("a changed release ID after upload prevents publication",()=>{
+ const f=fixture();try{
+  const gh=fakeGh(f.options,f.metadata);
+  assert.throws(()=>publishGitHubRelease(f.options,args=>{
+   const result=gh.run(args);
+   if(args.includes("repos/owner/repo/releases/101")&&!args.includes("PATCH"))return JSON.stringify({...JSON.parse(result),id:202});
+   return result;
+  }),/identity changed/);
+  assert.equal(gh.release.draft,true);
+  assert.equal(gh.calls.some(args=>args.includes("PATCH")),false);
  }finally{fs.rmSync(f.root,{recursive:true,force:true});}
 });
 test("complete immutable releases are verified without attempting mutation",()=>{
@@ -106,7 +131,7 @@ test("a tag changed during publication is detected afterward without retagging",
   const gh=fakeGh(f.options,f.metadata);
   assert.throws(()=>publishGitHubRelease(f.options,args=>{
    const result=gh.run(args);
-   if(args.includes("--draft=false"))gh.tag={type:"commit",sha:"b".repeat(40)};
+   if(args.includes("--draft=false")||args.includes("draft=false"))gh.tag={type:"commit",sha:"b".repeat(40)};
    return result;
   }),/tag.*commit/i);
  }finally{fs.rmSync(f.root,{recursive:true,force:true});}
