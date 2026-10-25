@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-10-25
+
+This release syncs upstream through v0.82.1 and adds the agent roster: resolution-time model
+fallbacks, teams as data launched as `team.<name>` workflows, the `/roster` command, and the
+observability foundations companion UIs build on. See [docs/roster.md](docs/roster.md).
+
 ### Added (roster)
 
 - `/roster`: overview of every agent grouped by source with its model chain (primary →
