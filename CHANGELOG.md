@@ -2,15 +2,29 @@
 
 ## [Unreleased]
 
-## [0.81.3] - 2026-10-25
+### Fixed
 
-### Security
+- Create GitHub Releases as drafts and verify tarball name, upload state, size
+  and SHA-256 digest before publication, supporting immutable releases safely.
+- Resolve actual lightweight/annotated tag commits before and after publication;
+  reject mismatches without retagging and validate exact nonempty dated notes.
 
-- Update the direct runtime Undici dependency from 8.10.2 to 8.12.3, including
-  the 8.12.2 fix for GHSA-xjj6-f33q-929c and related vulnerable-range advisories.
-- The separate Undici copy pinned by the development/host Pi SDK is not changed
-  by this direct dependency update; this is not a claim that all host SDK
-  dependency vulnerabilities are resolved.
+### Changed
+
+- Ordinary PRs no longer require version bumps or new changelog entries. Prepare
+  grouped versioned notes in a dedicated release PR.
+- Skip publication and npm approval for main pushes without a package-version
+  change; verify release intent from successful same-commit main CI before the
+  protected publisher runs. OIDC publication remains unverified end-to-end.
+
+## [0.81.4] - 2026-10-25
+
+### Changed
+
+- Update oxlint and @oxlint/plugins from 1.80.0 to 1.89.0.
+- Retain Pi SDK 1.2.0 and TypeBox 1.3.27 development pins so minimum-host
+  compatibility coverage and provider diagnostic semantics remain unchanged.
+  The grouped update intentionally does not migrate the host SDK baseline.
 
 ## [0.81.1] - 2026-10-24
 
