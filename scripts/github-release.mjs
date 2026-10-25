@@ -20,7 +20,7 @@ export function extractReleaseNotes(changelog,version) {
  return body+"\n";
 }
 function runGh(args) {
- return execFileSync("gh",args,{encoding:"utf8",stdio:["ignore","pipe","pipe"]});
+ return execFileSync("gh",args,{encoding:"utf8",stdio:["ignore","pipe","pipe"],timeout:30_000});
 }
 function normalizeNotes(text) {return String(text??"").replace(/\r\n/g,"\n").trim();}
 export function resolveTagCommit(repo,tag,gh=runGh) {
@@ -69,6 +69,7 @@ export function publishGitHubRelease(options,gh=runGh) {
  };
  const validate=release=>{
   assert.ok(release,"Release is not visible after creation");
+  assert.ok(Number.isSafeInteger(release.id)&&release.id>0,"Invalid release identity");
   assert.equal(release.tag_name,tag,"Release tag mismatch");
   assert.equal(normalizeNotes(release.body),normalizeNotes(notes),"Release changelog mismatch");
  };
@@ -83,11 +84,20 @@ export function publishGitHubRelease(options,gh=runGh) {
  let release=lookup();
  verifyTag(release);
  if(!release){
-  gh(["release","create",tag,"--repo",repo,"--target",target,"--title",title,"--notes-file",notesFile,"--draft"]);
-  release=lookup();
+  // The list endpoint may still omit a just-created draft. Keep the mutation
+  // response and its stable ID rather than rediscovering it through that list.
+  release=JSON.parse(gh(["api",`repos/${repo}/releases`,"--method","POST",
+   "-f",`tag_name=${tag}`,"-f",`target_commitish=${target}`,"-f",`name=${title}`,
+   "-f",`body=${notes}`,"-F","draft=true"]));
   verifyTag(release);
  }
  validate(release);
+ const releaseId=release.id;
+ const readById=()=>{
+  const current=JSON.parse(gh(["api",`repos/${repo}/releases/${releaseId}`,"-H","Cache-Control: no-cache"]));
+  assert.equal(current.id,releaseId,"Release identity changed");
+  return current;
+ };
  if(release.draft===false){
   try {assertAssets(release,expected);}
   catch {throw Error(`Release ${tag} is already published and has missing or mismatched assets; create a new version instead of modifying an immutable release.`);}
@@ -95,12 +105,13 @@ export function publishGitHubRelease(options,gh=runGh) {
  }
  assert.equal(release.draft,true,"Unexpected release state");
  gh(["release","upload",tag,...assets.map(file=>path.resolve(file)),"--repo",repo,"--clobber"]);
- release=lookup();validate(release);
+ release=readById();validate(release);
  assert.equal(release.draft,true,"Release was published before asset verification");
  assertAssets(release,expected);
  verifyTag(release);
- gh(["release","edit",tag,"--repo",repo,"--draft=false","--latest"]);
- release=lookup();validate(release);assertAssets(release,expected);
+ release=JSON.parse(gh(["api",`repos/${repo}/releases/${releaseId}`,"--method","PATCH","-F","draft=false","-f","make_latest=true"]));
+ assert.equal(release.id,releaseId,"Release identity changed");
+ validate(release);assertAssets(release,expected);
  assert.equal(release.draft,false,"Release publication did not finish");
  verifyTag(release);
  return {tag,alreadyPublished:false};
