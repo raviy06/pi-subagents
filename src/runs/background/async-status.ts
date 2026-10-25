@@ -71,6 +71,8 @@ interface AsyncRunStepSummary {
 	contextLimit?: number;
 	thinking?: string;
 	requestedModel?: string;
+	/** Fork addition: resolution-time fallback reason, when a fallback replaced `requestedModel`. */
+	fallbackReason?: string;
 	sessionFile?: string;
 	transcriptPath?: string;
 	error?: string;
@@ -394,6 +396,7 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 			...(stepThinking ? { thinking: stepThinking } : {}),
 			...(step.thinkingCeiling ? { thinkingCeiling: step.thinkingCeiling } : {}),
 			...(step.requestedModel ? { requestedModel: step.requestedModel } : {}),
+			...(step.fallbackReason ? { fallbackReason: step.fallbackReason } : {}),
 			...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
 			...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
 			...(step.error ? { error: step.error } : {}),

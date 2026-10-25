@@ -1,5 +1,5 @@
-import { resolveModelCandidate, splitThinkingSuffix, type AvailableModelInfo } from "./model-resolution.ts";
-import { checkModelScope, type ModelScopeCheckRule } from "./model-scope.ts";
+import { configuredScopes, resolveModelCandidate, resolveModelSelection, splitThinkingSuffix, type AvailableModelInfo, type ModelSelectionEvidence, type ResolveModelSelectionOptions } from "./model-resolution.ts";
+import { checkModelScope, type ModelScopeCheckRule, type ModelSource } from "./model-scope.ts";
 
 export type ModelFallbackReason = "unregistered" | "out-of-scope";
 
@@ -61,6 +61,8 @@ export function pickModelCandidate(input: {
 	availableModels?: AvailableModelInfo[];
 	preferredProvider?: string;
 	scopes?: readonly ModelScopeCheckRule[];
+	/** Severity source for scope checks; `inherited` lets non-strict scopes pass as the configured path does. */
+	scopeSource?: ModelSource;
 }): ModelCandidatePick | undefined {
 	const candidates: string[] = [];
 	for (const candidate of [input.model, ...(input.fallbacks ?? [])]) {
@@ -73,7 +75,7 @@ export function pickModelCandidate(input: {
 			skipped.push({ model: candidate, reason: "unregistered" });
 			continue;
 		}
-		const rejected = (input.scopes ?? []).some((scope) => checkModelScope(resolved, scope, "explicit")?.severity === "error");
+		const rejected = (input.scopes ?? []).some((scope) => checkModelScope(resolved, scope, input.scopeSource ?? "explicit")?.severity === "error");
 		if (rejected) {
 			skipped.push({ model: candidate, reason: "out-of-scope" });
 			continue;
@@ -87,4 +89,34 @@ export function pickModelCandidate(input: {
 		};
 	}
 	return undefined;
+}
+
+/**
+ * `resolveModelSelection` with resolution-time fallbacks. When the requested configured or explicit
+ * model is unregistered or rejected by an enforced scope, the first viable fallback is resolved
+ * instead and `fallbackReason` says why. Inherited parent models are never substituted, and a
+ * provider error after launch never changes the model (upstream removed same-launch switching).
+ */
+export function resolveModelSelectionWithFallbacks(
+	model: string | undefined,
+	availableModels: AvailableModelInfo[] | undefined,
+	preferredProvider: string | undefined,
+	options: ResolveModelSelectionOptions & { fallbacks?: readonly string[] } = {},
+): ModelSelectionEvidence {
+	const { fallbacks, ...selection } = options;
+	const origin = selection.origin ?? (selection.primaryModelFromParent ? "inherited" : "configured");
+	if (!model || origin === "inherited" || selection.primaryModelFromParent || !fallbacks?.length) {
+		return resolveModelSelection(model, availableModels, preferredProvider, selection);
+	}
+	const pick = pickModelCandidate({
+		model: model.trim(),
+		fallbacks,
+		availableModels,
+		preferredProvider,
+		scopes: configuredScopes(selection.scope),
+		scopeSource: origin === "explicit" ? "explicit" : "inherited",
+	});
+	if (!pick?.fallbackReason) return resolveModelSelection(model, availableModels, preferredProvider, selection);
+	const evidence = resolveModelSelection(pick.effective, availableModels, preferredProvider, selection);
+	return { ...evidence, requestedModel: model.trim(), fallbackReason: pick.fallbackReason };
 }

@@ -4,6 +4,7 @@ import {
 	MAX_MODEL_FALLBACKS,
 	normalizeFallbacks,
 	pickModelCandidate,
+	resolveModelSelectionWithFallbacks,
 } from "../../src/runs/shared/model-candidates.ts";
 
 const models = [
@@ -110,5 +111,29 @@ describe("normalizeFallbacks", () => {
 		const tooMany = Array.from({ length: MAX_MODEL_FALLBACKS + 1 }, (_, index) => `model-${index}`);
 		assert.throws(() => normalizeFallbacks(tooMany, "fallbacks"), /^Error: fallbacks .*at most 8/);
 		assert.equal(normalizeFallbacks(tooMany.slice(0, MAX_MODEL_FALLBACKS), "fallbacks").length, MAX_MODEL_FALLBACKS);
+	});
+
+	describe("resolveModelSelectionWithFallbacks", () => {
+	it("falls back at resolution time to the next registered, in-scope candidate (fork)", () => {
+			assert.deepEqual(resolveModelSelectionWithFallbacks("missing", models, undefined, { fallbacks: ["gpt-5-mini:high"] }), {
+				model: "openai/gpt-5-mini:high",
+				requestedModel: "missing",
+				fallbackReason: "unregistered",
+			});
+			assert.deepEqual(resolveModelSelectionWithFallbacks("gpt-5-mini", models, undefined, { fallbacks: ["claude-sonnet-4"] }), {
+				model: "openai/gpt-5-mini",
+				requestedModel: "gpt-5-mini",
+			}, "a viable primary never falls back");
+			const scope = { enforce: true, strict: true, allow: ["anthropic/*"], origin: "test" };
+			assert.deepEqual(resolveModelSelectionWithFallbacks("gpt-5-mini", models, undefined, { scope, fallbacks: ["claude-sonnet-4"] }), {
+				model: "anthropic/claude-sonnet-4",
+				requestedModel: "gpt-5-mini",
+				fallbackReason: "out-of-scope",
+			});
+			assert.throws(() => resolveModelSelectionWithFallbacks("missing", models, undefined, { fallbacks: ["also-missing"] }), /Unknown subagent model 'missing'/, "no viable candidate keeps the primary's error");
+			assert.deepEqual(resolveModelSelectionWithFallbacks("openai/gpt-5-mini", models, undefined, { origin: "inherited", primaryModelFromParent: true, fallbacks: ["claude-sonnet-4"] }), {
+				model: "openai/gpt-5-mini",
+			}, "inherited parent models are never substituted");
+		});
 	});
 });

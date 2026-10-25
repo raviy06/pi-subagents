@@ -3043,6 +3043,33 @@ if (!fs.existsSync(${JSON.stringify(holdPath)})) { console.log('{}'); } else {
 		assert.equal(mockPi.callCount(), 0);
 	});
 
+	it("launches on the first viable configured fallback when the agent model is unregistered (fork)", async () => {
+		mockPi.onCall({ output: "Done" });
+		const agents = [makeAgent("echo", { model: "nope/none", fallbacks: ["also/missing", "openai/gpt-5-mini"] })];
+
+		const result = await runSync(tempDir, agents, "echo", "Task", {
+			availableModels: [{ provider: "openai", id: "gpt-5-mini", fullId: "openai/gpt-5-mini" }],
+		});
+
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.model, "openai/gpt-5-mini");
+		assert.equal(result.requestedModel, "nope/none");
+		assert.equal(result.fallbackReason, "unregistered");
+		const args = readAllCallArgs()[0]!;
+		assert.equal(args[args.indexOf("--model") + 1], "openai/gpt-5-mini");
+	});
+
+	it("still rejects the launch when no configured fallback is viable (fork)", async () => {
+		const agents = [makeAgent("echo", { model: "fast", fallbacks: ["slower"] })];
+		await assert.rejects(
+			runSync(tempDir, agents, "echo", "Task", {
+				availableModels: [{ provider: "openai", id: "gpt-5-mini", fullId: "openai/gpt-5-mini" }],
+			}),
+			/Unknown subagent model 'fast'/,
+		);
+		assert.equal(mockPi.callCount(), 0);
+	});
+
 	it("prefers the parent session provider for ambiguous bare model ids", async () => {
 		mockPi.onCall({ output: "Done" });
 		const agents = [makeAgent("echo", { model: "gpt-5-mini" })];

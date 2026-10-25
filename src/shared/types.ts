@@ -1317,6 +1317,8 @@ export interface SingleResult {
 	/** Effective thinking level used by this foreground child, when known. */
 	thinking?: string;
 	requestedModel?: string;
+	/** Fork addition: why a configured fallback replaced `requestedModel` at resolution time. */
+	fallbackReason?: string;
 	controlEvents?: ControlEvent[];
 	error?: string;
 	/**
@@ -2090,6 +2092,8 @@ export interface AsyncStatus {
 		contextLimit?: number;
 		thinkingCeiling?: ThinkingLevel;
 		requestedModel?: string;
+		/** Fork addition: resolution-time fallback reason when a configured fallback replaced `requestedModel`. */
+		fallbackReason?: string;
 		/** True when the child input exceeded the model context window. */
 		contextOverflow?: boolean;
 		totalCost?: CostSummary;

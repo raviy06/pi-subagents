@@ -7,6 +7,8 @@ export type { AvailableModelInfo };
 export interface ModelSelectionEvidence {
 	model?: string;
 	requestedModel?: string;
+	/** Fork addition: set when a configured fallback replaced the requested model at resolution time. */
+	fallbackReason?: string;
 }
 
 export { splitThinkingSuffix };
@@ -317,7 +319,7 @@ function defaultScopeWarn(violation: ModelScopeViolation): void {
 	console.warn(`[pi-subagents] ${violation.message}`);
 }
 
-function configuredScopes(scope: ModelScopeCheckRule | ModelScopeCheckRule[] | undefined): ModelScopeCheckRule[] {
+export function configuredScopes(scope: ModelScopeCheckRule | ModelScopeCheckRule[] | undefined): ModelScopeCheckRule[] {
 	return scope ? (Array.isArray(scope) ? scope : [scope]) : [];
 }
 
