@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.81.3] - 2026-10-25
+
+### Security
+
+- Update the direct runtime Undici dependency from 8.10.2 to 8.12.3, including
+  the 8.12.2 fix for GHSA-xjj6-f33q-929c and related vulnerable-range advisories.
+- The separate Undici copy pinned by the development/host Pi SDK is not changed
+  by this direct dependency update; this is not a claim that all host SDK
+  dependency vulnerabilities are resolved.
+
 ## [0.81.1] - 2026-10-24
 
 First release prepared for the `@raviy06/pi-subagents` fork, based on upstream

@@ -13,7 +13,7 @@ test("fork release identity is scoped, versioned and synchronized without changi
 	const pkg = JSON.parse(read("package.json"));
 	const lock = JSON.parse(read("package-lock.json"));
 	assert.equal(pkg.name, "@raviy06/pi-subagents");
-	assert.equal(pkg.version, "0.81.1");
+	assert.equal(pkg.version, "0.81.3");
 	assert.equal(pkg.private, true, "publish only the built distribution");
 	assert.equal(pkg.bin, undefined, "do not expose the shared upstream installer bin");
 	assert.equal(pkg.repository.url, "git+https://github.com/raviy06/pi-subagents.git");
