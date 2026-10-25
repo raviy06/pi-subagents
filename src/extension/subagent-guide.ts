@@ -13,6 +13,7 @@ export const SUBAGENT_GUIDE_TOPICS = [
 	"models",
 	"watchdog",
 	"extension-api",
+	"roster",
 	"council",
 ] as const;
 

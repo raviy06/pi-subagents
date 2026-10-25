@@ -32,6 +32,7 @@ subagent({ action: "resume", id, message })   // completed or paused child; retu
 subagent({ action: "steer", id, message })    // live async child
 subagent({ action: "stop", id })              // ends the run; not resumable
 subagent({ action: "interrupt", id })         // pauses the child's current turn
+subagent({ workflow: "team.<name>", args: { task } })   // a roster team (fork): parallel, pipeline or council of agents
 subagent({ action: "list" })  ·  subagent({ action: "models" })
 subagent({ action: "guide", options: { topic: "<section address>" } })
 ```
@@ -137,6 +138,8 @@ work from the next request. Read one section, not a whole topic:
 | Missions and schedules | `missions/missions`, `missions/schedules` |
 | Watchdog | `watchdog/when-it-runs`, `watchdog/choosing-a-model` |
 | Model overrides and profiles | `models/setting-defaults-and-overrides` |
+| Model fallbacks (fork) | `models/fallbacks-fork-addition` |
+| Teams, `/roster`, `team.<name>` workflows (fork) | `roster/teams`, `roster/models-primary-and-fallbacks` |
 | Other projects in panes | `tool-reference/herdr-project-panes` |
 | Setup looks wrong | `subagent({ action: "doctor" })` |
 
@@ -144,4 +147,4 @@ work from the next request. Read one section, not a whole topic:
 
 - Choosing roles, writing prompts, review/research/cleanup techniques, oracle → [prompting-and-roles.md](references/prompting-and-roles.md)
 - Several lanes, worktrees, repositories, staged fixes, review loops, finding and gate triage → [orchestration.md](references/orchestration.md)
-- Advisor council → [../council-mode/SKILL.md](../council-mode/SKILL.md)
+- Advisor council → [../council-mode/SKILL.md](../council-mode/SKILL.md); a saved `council` team in `agentRoster.teams` runs the same shape as `subagent({ workflow: "team.<name>", args: { task } })`

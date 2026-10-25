@@ -4,9 +4,13 @@
 
 # @raviy06/pi-subagents
 
-A thin fork of [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents),
-adding a structured activity API for companion UIs. Upstream authorship and MIT
-license are preserved. See [fork maintenance and activation](docs/fork-maintenance.md).
+A fork of [nicobailon/pi-subagents](https://github.com/nicobailon/pi-subagents) that keeps
+the upstream engine and adds a user-owned **agent roster**: resolution-time model fallbacks,
+teams as data (`parallel`, `pipeline`, `council`) launched as `team.<name>` workflows, the
+`/roster` command, and the observability foundations companion UIs build on (structured
+activity API, change events, durable run records, catalogue RPC). Upstream authorship and MIT
+license are preserved. See [the roster guide](docs/roster.md) and
+[fork maintenance and activation](docs/fork-maintenance.md).
 
 The fork replaces upstream at runtime; **do not load both**. Upstream documentation
 below retains original terminology and examples: use `@raviy06/pi-subagents`
@@ -24,9 +28,18 @@ Tool names, event channels, and configuration keys intentionally remain unchange
 pi install npm:@raviy06/pi-subagents
 ```
 
-For an unpublished local build, follow the activation checklist linked above;
-this documentation does not attest that the scoped package is already on npm.
+Published fork versions are listed on npm under `@raviy06/pi-subagents`; for an unpublished
+local build, follow the activation checklist linked above.
 The underlying extension needs Pi 1.2.0 or newer. Background children use the host's SDK: npm Pi keeps its detached Node runner; the official Pi 1.2.0 Linux x64 standalone release loads the same runner through Pi's embedded SDK, without a separate SDK install. See [Standalone background execution](docs/standalone-background.md) for the supported boundary and validation gate.
+
+## Fork additions at a glance
+
+| | What | Where |
+|---|---|---|
+| Models | `fallbacks` on an agent (frontmatter or `subagents.agentOverrides.<name>`): the first registered, in-scope candidate launches; `requestedModel`/`model`/`fallbackReason` are reported. No running child ever switches model. | [models](docs/models.md#fallbacks-fork-addition) |
+| Teams | `agentRoster.teams` in user/project settings → `subagent({ workflow: "team.<name>", args: { task } })`. Shapes `parallel`, `pipeline`, `council`. Compiled statically, validated before launch, no host authority. | [roster](docs/roster.md) |
+| `/roster` | Every agent with its model chain and provenance; teams; `agent <name>` (admin incl. *Change fallbacks*), `team <name>`, `team add\|remove`, `run <team> <task>`, `reload`. | [roster](docs/roster.md) |
+| For companion UIs | `activityStatus` entries with `task`/`startedAt`/`model`, `subagents:activity:changed`, `subagents:record` session entries, `manage` actions `agents.list`/`agents.get`/`models.list`; all advertised in `ping.capabilities`. | [extension API](docs/extension-api.md#activity-status-dto-fork-addition) |
 
 ## Try this first
 

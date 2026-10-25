@@ -5,7 +5,7 @@
 - Fork repository: https://github.com/raviy06/pi-subagents
 - Upstream repository: https://github.com/nicobailon/pi-subagents
 - Fork npm identity: `@raviy06/pi-subagents`
-- Initial prepared version: `0.81.1`
+- Initial prepared version: `0.81.1`; roster shipped in `0.83.0`.
 - Baseline: upstream `1a80e24e` (includes commits after upstream v0.81.0). Last synced upstream commit: `35d45d98` (v0.82.1).
 - Preserve upstream authorship, license, tool/event names and configuration contracts.
 
@@ -20,9 +20,11 @@ The fork's bounded delta, all additive and feature-detectable through
   `agents.get`, `models.list`) with row provenance and disabled rows;
 - resolution-time model `fallbacks` (`src/runs/shared/model-candidates.ts`), the one
   declared deviation from upstream's one-model rule, documented in [models](models.md#fallbacks-fork-addition);
-- the self-contained roster module under `src/roster/**` (planned; see
-  [the roster spec](specs/2026-10-25-agent-roster.md) and [plan](plans/2026-10-25-agent-roster.md))
-  and its single wiring block in `src/extension/index.ts`;
+- the self-contained roster module under `src/roster/**` (teams as `team.<name>` workflow
+  resources, `/roster`; see [roster](roster.md), the [spec](specs/2026-10-25-agent-roster.md)
+  and [plan](plans/2026-10-25-agent-roster.md)), its single wiring block in
+  `src/extension/index.ts`, one option on `registerSlashCommands`, and the *Change fallbacks*
+  action in the `/subagents` admin;
 - test-environment corrections.
 
 It does not replace the runner, broaden permissions, switch a running child's

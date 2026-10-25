@@ -13,6 +13,8 @@ Before launch, read `skills/council-mode/references/pass-contracts.md`.
 
 ## Roster
 
+If the user has a saved council team (`/roster` lists teams with shape `council`), prefer it: `subagent({ workflow: "team.<name>", args: { task: "<brief>" }, async: true })` runs members in parallel, has the chair synthesise, and cross-examines by resuming members for the team's `passes`; its result carries `memo`, `rounds` and run ids. Use the manual procedure below when no team fits or the user wants a custom roster.
+
 Run `subagent({ action: "list" })`, then choose 2-3 executable advisor names that start with `council-`. The prefix is convention only. Never use more than four advisors.
 
 If fewer than two council profiles are available, fill with `oracle`, then `reviewer`. Launch fallback `oracle` with `context: "fork"`; let fallback `reviewer` use its normal profile context. Note fallbacks and known context modes in the memo. If fewer than two advisors remain, use the normal one-oracle consultation loop and label it degraded mode.

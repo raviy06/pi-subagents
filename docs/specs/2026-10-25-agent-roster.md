@@ -1,6 +1,6 @@
 # Agent roster: user-owned agent, model and team management for pi-subagents
 
-**Status:** approved (design agreed in session 2026-10-25)
+**Status:** implemented — foundations (#10) and roster module (#11) merged 2026-10-25, released as 0.83.0. Follow-ups: tabbed `/roster` TUI, `@mention` routing, upstream proposals (F2–F4, handles).
 **Owner:** raviy06
 **Repos:** `raviy06/pi-subagents` (fork: execution, control plane **and roster**), `raviy06/pi-agent-activity` (read-only pi-minimal footer bridge), `pi-minimal` (host environment)
 

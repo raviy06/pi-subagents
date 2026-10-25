@@ -237,7 +237,7 @@ You can override selected agent fields without copying the whole agent. Override
 }
 ```
 
-Supported override fields: `description`, `advertise`, `machine`, `output`, `outputMode`, `defaultReads`, `model`, `defaultProvider`, `thinking`, `systemPromptMode`, `inheritProjectContext`, `inheritGlobalContext`, `inheritSkills`, `defaultContext`, `acceptanceRole`, `disabled`, `skills`, `tools`, and `systemPrompt`.
+Supported override fields: `description`, `advertise`, `machine`, `output`, `outputMode`, `defaultReads`, `model`, `fallbacks` (fork addition; `false` clears), `defaultProvider`, `thinking`, `systemPromptMode`, `inheritProjectContext`, `inheritGlobalContext`, `inheritSkills`, `defaultContext`, `acceptanceRole`, `disabled`, `skills`, `tools`, and `systemPrompt`.
 
 `launcher` is not a supported override field, and an override that sets it is rejected. To run a builtin under a launcher, copy it into a user agent file (for example with `eject`) and set `launcher` there.
 
@@ -454,6 +454,7 @@ Field notes:
 | `extensions` | Omitted means a background child loads the parent's ambient extensions; empty means no ambient extensions; list values load exactly those extensions. Foreground children never load ambient extensions, so for them only listed values apply. |
 | `subagentOnlyExtensions` | Extension paths loaded only in this agent's child sessions. Tools registered there are unavailable to the main agent unless also installed through normal Pi extension configuration. |
 | `model` | Default model. Bare ids prefer the current provider when possible, then unique registry matches. On the two Claude Code adapters this is Claude Code's own alias or id, and a trailing `:level` picks the effort. |
+| `fallbacks` | Fork addition: ordered models (at most eight) tried at resolution time when `model` is unregistered or out of scope. See [models](models.md#fallbacks-fork-addition). |
 | `thinking` | Appended as a `:level` suffix at runtime unless a suffix is already present. On the two Claude Code adapters it becomes `--effort`, and a suffix on `model` wins over it. |
 | `systemPromptMode` | `replace` by default; `append` keeps Pi's base prompt. |
 | `inheritProjectContext` | Keeps or strips inherited repository instruction blocks. |
