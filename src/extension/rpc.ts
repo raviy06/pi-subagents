@@ -74,9 +74,21 @@ export const SUBAGENT_RPC_MANAGEMENT_ACTIONS = [
 	"schedule.resume",
 	"schedule.run",
 	"schedule.delete",
+	// Fork addition: read-only agent catalogue for roster-style consumers.
+	"agents.list",
+	"agents.get",
+	"models.list",
 ] as const;
 
 type SubagentRpcManagementAction = typeof SUBAGENT_RPC_MANAGEMENT_ACTIONS[number];
+
+/** Fork addition: catalogue actions map onto the existing management tool actions in JSON (capability) mode. */
+const CATALOGUE_ACTIONS: Record<"agents.list" | "agents.get" | "models.list", "list" | "get" | "models"> = {
+	"agents.list": "list",
+	"agents.get": "get",
+	"models.list": "models",
+};
+export const AGENTS_CATALOGUE_VERSION = 1;
 
 type SubagentRpcErrorCode =
 	| "invalid_request"
@@ -457,6 +469,7 @@ function pingData(ctx: ExtensionContext | null, options: RegisterSubagentRpcBrid
 			managementActions: enabledManagementActions(options),
 			fleetStatus: { version: 1 },
 			activityStatus: { version: ACTIVITY_STATUS_VERSION },
+			agentsCatalog: { version: AGENTS_CATALOGUE_VERSION, actions: Object.keys(CATALOGUE_ACTIONS) },
 			asyncStatusSnapshot: { kind: ASYNC_STATUS_SNAPSHOT_KIND, version: ASYNC_STATUS_SNAPSHOT_VERSION },
 			asyncSpawn: true,
 			steer: true,
@@ -508,6 +521,7 @@ function manageParams(params: unknown, options: RegisterSubagentRpcBridgeOptions
 		throw new SubagentRpcError("invalid_params", "RPC manage id must be a non-empty string.");
 	}
 	const action = input.action as SubagentRpcManagementAction;
+	if (action in CATALOGUE_ACTIONS) return catalogueParams(action as keyof typeof CATALOGUE_ACTIONS, input);
 	const requiresId = action !== "schedule.list";
 	if (requiresId && typeof input.id !== "string") {
 		throw new SubagentRpcError("invalid_params", `RPC manage ${action} requires id.`);
@@ -519,6 +533,23 @@ function manageParams(params: unknown, options: RegisterSubagentRpcBridgeOptions
 		action,
 		...(typeof input.id === "string" ? { id: input.id.trim() } : {}),
 		...(action === "schedule.run" && input.quiet === true ? { quiet: true } : {}),
+	};
+	assertSubagentParams(output, "RPC manage params");
+	return output;
+}
+
+function catalogueParams(action: keyof typeof CATALOGUE_ACTIONS, input: Record<string, unknown>): SubagentParamsLike {
+	if (input.agentScope !== undefined && (typeof input.agentScope !== "string" || !["user", "project", "both"].includes(input.agentScope))) {
+		throw new SubagentRpcError("invalid_params", "RPC manage agentScope must be 'user', 'project', or 'both'.");
+	}
+	if (action === "agents.get" && (typeof input.agent !== "string" || !input.agent.trim())) {
+		throw new SubagentRpcError("invalid_params", "RPC manage agents.get requires agent.");
+	}
+	const output: SubagentParamsLike = {
+		action: CATALOGUE_ACTIONS[action],
+		...(action === "agents.list" ? { capabilities: true } : {}),
+		...(typeof input.agent === "string" ? { agent: input.agent.trim() } : {}),
+		...(typeof input.agentScope === "string" ? { agentScope: input.agentScope } : {}),
 	};
 	assertSubagentParams(output, "RPC manage params");
 	return output;

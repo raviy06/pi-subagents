@@ -109,7 +109,7 @@ describe("subagent extension RPC bridge", () => {
 		);
 		assert.deepEqual(
 			(reply as { data: { capabilities?: { managementActions?: unknown } } }).data.capabilities?.managementActions,
-			["schedule.list", "schedule.show", "schedule.history", "schedule.pause", "schedule.resume", "schedule.run", "schedule.delete"],
+			["schedule.list", "schedule.show", "schedule.history", "schedule.pause", "schedule.resume", "schedule.run", "schedule.delete", "agents.list", "agents.get", "models.list"],
 		);
 		assert.deepEqual(
 			(reply as { data: { capabilities?: { fleetStatus?: unknown } } }).data.capabilities?.fleetStatus,
@@ -319,6 +319,41 @@ describe("subagent extension RPC bridge", () => {
 		assert.equal(missingId.success, false);
 		assert.equal((missingId as { error: { code: string } }).error.code, "invalid_params");
 
+		bridge.dispose();
+	});
+
+	it("maps catalogue manage actions onto JSON-mode management tool actions (fork)", async () => {
+		const events = new FakeEvents();
+		const executed: unknown[] = [];
+		const bridge = registerSubagentRpcBridge({
+			events,
+			getContext: () => ctx(),
+			execute: async (_id, params) => {
+				executed.push(params);
+				return { content: [{ type: "text", text: "ok" }], details: { mode: "management", results: [], agentCapabilities: { agents: [], restrictedCount: 0 } } } satisfies AgentToolResult<Details>;
+			},
+		});
+
+		const ping = await request(events, "ping-catalogue", "ping", {});
+		assert.deepEqual((ping as { data: { capabilities: { agentsCatalog?: unknown } } }).data.capabilities.agentsCatalog, { version: 1, actions: ["agents.list", "agents.get", "models.list"] });
+
+		const listed = await request(events, "manage-agents-list", "manage", { action: "agents.list", agentScope: "project" });
+		assert.equal(listed.success, true);
+		assert.deepEqual((listed as { data: { details?: { agentCapabilities?: unknown } } }).data.details?.agentCapabilities, { agents: [], restrictedCount: 0 });
+		assert.equal((await request(events, "manage-agents-get", "manage", { action: "agents.get", agent: " reviewer " })).success, true);
+		assert.equal((await request(events, "manage-models-list", "manage", { action: "models.list" })).success, true);
+		assert.deepEqual(executed, [
+			{ action: "list", capabilities: true, agentScope: "project" },
+			{ action: "get", agent: "reviewer" },
+			{ action: "models" },
+		]);
+
+		const missingAgent = await request(events, "manage-agents-get-missing", "manage", { action: "agents.get" });
+		assert.equal(missingAgent.success, false);
+		assert.equal((missingAgent as { error: { code: string } }).error.code, "invalid_params");
+		const badScope = await request(events, "manage-agents-list-scope", "manage", { action: "agents.list", agentScope: "everything" });
+		assert.equal(badScope.success, false);
+		assert.equal((badScope as { error: { code: string } }).error.code, "invalid_params");
 		bridge.dispose();
 	});
 
