@@ -106,7 +106,10 @@ describe("public activity snapshot", () => {
 		Object.assign(job.steps[0], { description: "SECRET prompt", currentToolArgs: "SECRET args", currentPath: "/SECRET/path", label: "SECRET label", currentTool: "read\u001b]0;SECRET\u0007", agent: "worker\u202e" });
 		s.asyncJobs.set(job.asyncId, job);
 		const json = JSON.stringify(buildActivityStatus(s, "S1", 500));
-		assert.ok(!json.includes("SECRET") && !json.includes("\u202e") && !json.includes("/SECRET"));
+		assert.ok(!json.includes("SECRET args") && !json.includes("SECRET label") && !json.includes("\u202e") && !json.includes("/SECRET"));
+		assert.ok(json.includes("SECRET prompt"), "the task preview is on by default");
+		const withoutTask = JSON.stringify(buildActivityStatus(s, "S1", 500, { taskPreview: false }));
+		assert.ok(!withoutTask.includes("SECRET"), "taskPreview: false keeps every prompt-derived text out");
 	});
 	it("caps output and scan work and makes incomplete coverage explicit", () => {
 		const s = state();
@@ -115,5 +118,25 @@ describe("public activity snapshot", () => {
 		assert.ok(result.entries.length <= 64); assert.ok(result.incomplete);
 		assert.ok(result.omitted.active > 0); assert.ok(result.omitted.scanTruncated);
 		assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 32768);
+	});
+
+	it("carries task, startedAt and model facts on entries (fork additive fields)", () => {
+		const s = state();
+		s.asyncJobs.set("a", { asyncId: "a", sessionId: "S1", status: "running", mode: "single", startedAt: 100,
+			steps: [{ index: 0, agent: "reviewer", status: "running", startedAt: 100, description: "  Review   " + "x".repeat(300), model: "openai/gpt-5-mini", requestedModel: "nope/none", fallbackReason: "unregistered", tokens: { input: 1, output: 2, total: 3 } }] } as any);
+		s.foregroundControls.set("f", { ...foreground("f"), description: "Scan the tests" });
+		const status = buildActivityStatus(s, "S1", 500);
+		const job = status.entries.find((entry) => entry.agent === "reviewer");
+		assert.ok(job);
+		assert.equal(job.startedAt, 100);
+		assert.ok(job.task!.startsWith("Review x"));
+		assert.ok(job.task!.length <= 120);
+		assert.deepEqual(job.model, { requested: "nope/none", effective: "openai/gpt-5-mini", fallbackReason: "unregistered" });
+		const fg = status.entries.find((entry) => entry.key !== job.key);
+		assert.ok(fg);
+		assert.equal(fg.task, undefined, "active children do not inherit the control description");
+		assert.equal(fg.startedAt, 100);
+		assert.equal("model" in fg, false);
+		assert.ok(Buffer.byteLength(JSON.stringify(status)) <= 32768);
 	});
 });

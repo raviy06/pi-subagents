@@ -17,6 +17,30 @@ On the two Claude Code adapters a model is Claude Code's own alias or id rather 
 
 Each launch resolves one model. Provider errors, including HTTP 429 responses, are returned from that model rather than selecting another one. Separately, a verified compaction abort after useful progress may continue the retained child session once on the same resolved model; this lifecycle recovery preserves work and is not model fallback.
 
+## Fallbacks (fork addition)
+
+The fork adds **resolution-time** fallbacks, which keep the one-model-per-launch rule above. Declare them on an agent:
+
+```yaml
+---
+name: researcher
+model: anthropic/claude-opus-5-5:high
+fallbacks: devaigateway/gpt-6-astra:high, anthropic/claude-sonnet-5:medium
+---
+```
+
+or in settings, where `false` clears definition fallbacks and project narrows user:
+
+```json
+{ "subagents": { "agentOverrides": { "researcher": { "model": "anthropic/claude-opus-5-5:high", "fallbacks": ["devaigateway/gpt-6-astra:high"] } } } }
+```
+
+At launch the candidates `[model, ...fallbacks]` (at most eight fallbacks, deduped) are tried in order and the first one that is **registered in the active Pi model registry** and **not rejected by an enforced model scope** is used. Nothing else triggers a fallback: once a child has started, a provider error, rate limit or timeout is returned from that model, exactly as before. Inherited parent models (`model: "inherit"`, or no model at all) are never substituted. When no candidate is viable the launch fails with the usual unknown-model error for the primary.
+
+The result records `requestedModel` (the primary), `model` (the effective launch model) and `fallbackReason` (`unregistered` or `out-of-scope`); async steps, `status.json`, the fleet surfaces, `activityStatus` entries and run records carry the same three fields, so a roster or footer can show `opus→astra (unregistered)`.
+
+Upstream removed its earlier `fallbackModels` feature together with all same-launch model switching ("Retry another model only with a later explicit launch"). This fork's `fallbacks` deliberately stays inside that rule: it only changes which single model a launch resolves to, never a running child's model. The legacy `fallbackModels` key still errors and points here.
+
 Use `model: "inherit"` in agent frontmatter or `agentOverrides.<name>.model` to select the current parent session model explicitly.
 
 ## Setting defaults and overrides

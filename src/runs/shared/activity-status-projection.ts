@@ -1,6 +1,6 @@
 import type { AsyncJobState, AsyncJobStep, NestedRunSummary, SubagentState } from "../../shared/types.ts";
 import { ownerSessionIds } from "./run-ownership.ts";
-import { ACTIVITY_STATUS_VERSION, activeEntry, activityEntry, activityKey, validCount, type ActivityEntry, type ActivityFacts, type ActivityStatus } from "./activity-status-model.ts";
+import { ACTIVITY_STATUS_VERSION, activeEntry, activityEntry, activityKey, validCount, type ActivityEntry, type ActivityEntryOptions, type ActivityFacts, type ActivityStatus } from "./activity-status-model.ts";
 
 export { ACTIVITY_STATUS_VERSION } from "./activity-status-model.ts";
 export type { ActivityStatus, ActivityEntry } from "./activity-status-model.ts";
@@ -11,7 +11,7 @@ const MAX_DEPTH = 4;
 type Candidate = { entry: ActivityEntry; rank: number; order: number };
 
 /** Pure projection: bounded reads of owner-held state, no IO, reconciliation, or execution. */
-export function buildActivityStatus(state: SubagentState | undefined, sessionId: string | null | undefined, now = Date.now()): ActivityStatus {
+export function buildActivityStatus(state: SubagentState | undefined, sessionId: string | null | undefined, now = Date.now(), options: ActivityEntryOptions = {}): ActivityStatus {
 	const result: ActivityStatus = {
 		version: ACTIVITY_STATUS_VERSION, scope: "current-session", generatedAt: validCount(now) ? now : 0,
 		available: false, entries: [], incomplete: false,
@@ -29,7 +29,7 @@ export function buildActivityStatus(state: SubagentState | undefined, sessionId:
 	};
 	const add = (owner: string, run: string, child: string | number, facts: ActivityFacts, rank: number, parentKey?: string) => {
 		const key = activityKey(owner, run, child);
-		const entry = activityEntry(key, facts, result.generatedAt, parentKey);
+		const entry = activityEntry(key, facts, result.generatedAt, parentKey, options);
 		if (!entry) { result.incomplete = true; return key; }
 		const prior = candidates.get(key);
 		if (!prior || rank > prior.rank) {

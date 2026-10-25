@@ -23,6 +23,7 @@ import { closestMatch } from "../shared/edit-distance.ts";
 import { parseFrontmatter, parseFrontmatterList, parseUnquotedList } from "./frontmatter.ts";
 import { buildRuntimeName, parsePackageName } from "./identity.ts";
 import { parseModelScopeConfig, type ModelScopeConfig } from "../runs/shared/model-scope.ts";
+import { normalizeFallbacks } from "../runs/shared/model-candidates.ts";
 export { BUILTIN_AGENT_NAMES } from "./builtin-names.ts";
 export { buildRuntimeName, frontmatterNameForConfig, parsePackageName } from "./identity.ts";
 import { parseMemoryFrontmatter } from "./agent-memory.ts";
@@ -65,6 +66,7 @@ export interface BuiltinAgentOverrideBase {
 	defaultReads?: string[];
 	model?: string;
 	modelProvider?: string;
+	fallbacks?: string[];
 	fast?: boolean;
 	thinking?: string | false;
 	systemPromptMode: SystemPromptMode;
@@ -97,6 +99,8 @@ interface BuiltinAgentOverrideConfig {
 	defaultReads?: string[] | false;
 	model?: string | false;
 	defaultProvider?: string | false;
+	/** Fork addition; `false` clears definition fallbacks. */
+	fallbacks?: string[] | false;
 	fast?: boolean;
 	thinking?: string | false;
 	systemPromptMode?: SystemPromptMode;
@@ -152,6 +156,8 @@ export interface AgentConfig {
 	mcpDirectTools?: string[];
 	model?: string;
 	modelProvider?: string;
+	/** Fork addition: ordered resolution-time fallback models tried when `model` is unregistered or out of scope. */
+	fallbacks?: string[];
 	fast?: boolean;
 	thinking?: string | false;
 	systemPromptMode: SystemPromptMode;
@@ -809,6 +815,7 @@ function cloneOverrideBase(agent: AgentConfig): BuiltinAgentOverrideBase {
 		...(agent.defaultReads !== undefined ? { defaultReads: [...agent.defaultReads] } : {}),
 		...(agent.model !== undefined ? { model: agent.model } : {}),
 		...(agent.modelProvider !== undefined ? { modelProvider: agent.modelProvider } : {}),
+		...(agent.fallbacks !== undefined ? { fallbacks: [...agent.fallbacks] } : {}),
 		...(agent.fast !== undefined ? { fast: agent.fast } : {}),
 		...(agent.thinking !== undefined ? { thinking: agent.thinking } : {}),
 		systemPromptMode: agent.systemPromptMode,
@@ -842,6 +849,7 @@ function cloneOverrideValue(override: BuiltinAgentOverrideConfig): BuiltinAgentO
 		...(override.defaultReads !== undefined ? { defaultReads: override.defaultReads === false ? false : [...override.defaultReads] } : {}),
 		...(override.model !== undefined ? { model: override.model } : {}),
 		...(override.defaultProvider !== undefined ? { defaultProvider: override.defaultProvider } : {}),
+		...(override.fallbacks !== undefined ? { fallbacks: override.fallbacks === false ? false : [...override.fallbacks] } : {}),
 		...(override.fast !== undefined ? { fast: override.fast } : {}),
 		...(override.thinking !== undefined ? { thinking: override.thinking } : {}),
 		...(override.systemPromptMode !== undefined ? { systemPromptMode: override.systemPromptMode } : {}),
@@ -1057,7 +1065,7 @@ function parseBuiltinOverrideEntry(
 
 	const input = value as Record<string, unknown>;
 	if (Object.hasOwn(input, "fallbackModels")) {
-		throw new Error(`Builtin override '${name}' in '${filePath}' uses removed field 'fallbackModels'; configure one model instead.`);
+		throw new Error(`Builtin override '${name}' in '${filePath}' uses removed field 'fallbackModels'; use 'fallbacks' (resolution-time only) or configure one model.`);
 	}
 	if (Object.hasOwn(input, "launcher")) {
 		throw new Error(`Builtin override '${name}' in '${filePath}' sets 'launcher', which settings overrides do not support; set 'launcher' in a user agent file instead.`);
@@ -1093,6 +1101,11 @@ function parseBuiltinOverrideEntry(
 	if ("model" in input) {
 		if (typeof input.model === "string" || input.model === false) override.model = input.model;
 		else throw new Error(`Builtin override '${name}' in '${filePath}' has invalid 'model'; expected a string or false.`);
+	}
+
+	if ("fallbacks" in input) {
+		if (input.fallbacks === false) override.fallbacks = false;
+		else override.fallbacks = normalizeFallbacks(input.fallbacks, `Builtin override '${name}' in '${filePath}' field 'fallbacks'`);
 	}
 
 	if ("fast" in input) {
@@ -1538,6 +1551,7 @@ function applyBuiltinOverride(
 		if (override.defaultProvider === false) delete next.modelProvider;
 		else next.modelProvider = override.defaultProvider;
 	}
+	if (override.fallbacks !== undefined) { if (override.fallbacks === false) delete next.fallbacks; else next.fallbacks = [...override.fallbacks]; }
 	if (override.fast !== undefined) next.fast = override.fast;
 	if (override.thinking !== undefined) { if (override.thinking === false) delete next.thinking; else next.thinking = override.thinking; }
 	if (override.systemPromptMode !== undefined) next.systemPromptMode = override.systemPromptMode;
@@ -1669,6 +1683,7 @@ function runtimeAgentOverrides(settings: SubagentSettings): SubagentSettings {
 		const narrowed: BuiltinAgentOverrideConfig = {};
 		if (override.model !== undefined) narrowed.model = override.model;
 		if (override.defaultProvider !== undefined) narrowed.defaultProvider = override.defaultProvider;
+		if (override.fallbacks !== undefined) narrowed.fallbacks = override.fallbacks;
 		if (override.fast !== undefined) narrowed.fast = override.fast;
 		if (override.thinking !== undefined) narrowed.thinking = override.thinking;
 		if (Object.keys(narrowed).length > 0) overrides[name] = narrowed;
@@ -2204,7 +2219,7 @@ function loadAgentsFromDefinitionFiles(files: AgentDefinitionFile[], source: Age
 		const skillStr = frontmatter.skill || frontmatter.skills;
 		const skills = parseFrontmatterList(skillStr);
 		const skillPath = parseFrontmatterList(frontmatter.skillPath);
-		if (frontmatter.fallbackModels !== undefined) throw new Error(`Agent '${filePath}' uses removed frontmatter field 'fallbackModels'. Configure one model instead.`);
+		if (frontmatter.fallbackModels !== undefined) throw new Error(`Agent '${filePath}' uses removed frontmatter field 'fallbackModels'. Use 'fallbacks' (resolution-time only) or configure one model.`);
 		const systemPromptMode = frontmatter.systemPromptMode === "replace"
 			? "replace"
 			: frontmatter.systemPromptMode === "append"
@@ -2263,6 +2278,11 @@ function loadAgentsFromDefinitionFiles(files: AgentDefinitionFile[], source: Age
 		const extensions = resolveAgentRelativeExtensionPaths(parseUnquotedList(frontmatter.extensions), filePath);
 		const subagentOnlyExtensions = resolveAgentRelativeExtensionPaths(parseUnquotedList(frontmatter.subagentOnlyExtensions), filePath);
 		const mutationTools = parseUnquotedList(frontmatter.mutationTools);
+		let fallbacks: string[] | undefined;
+		if (frontmatter.fallbacks !== undefined) {
+			const parsed = normalizeFallbacks(parseUnquotedList(frontmatter.fallbacks) ?? [], `Agent '${localName}' fallbacks frontmatter`);
+			if (parsed.length > 0) fallbacks = parsed;
+		}
 		let fast: boolean | undefined;
 		if (frontmatter.fast !== undefined) {
 			if (frontmatter.fast === "true") fast = true;
@@ -2333,6 +2353,7 @@ function loadAgentsFromDefinitionFiles(files: AgentDefinitionFile[], source: Age
 			...(allowedAgents !== undefined ? { allowedAgents } : {}),
 			...(mcpDirectTools.length > 0 ? { mcpDirectTools } : {}),
 			...(frontmatter.model !== undefined ? { model: frontmatter.model } : {}),
+			...(fallbacks !== undefined ? { fallbacks } : {}),
 			...(fast !== undefined ? { fast } : {}),
 			...(frontmatter.thinking !== undefined ? { thinking: frontmatter.thinking === "false" ? false : frontmatter.thinking } : {}),
 			systemPromptMode,

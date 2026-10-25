@@ -1649,7 +1649,36 @@ Do work
 `, "utf-8");
 
 		const result = discoverAgents(dir, "project");
-		assert.match(result.agentDiagnostics?.find((diagnostic) => diagnostic.name === "worker")?.error ?? "", /removed frontmatter field 'fallbackModels'/);
+		assert.match(result.agentDiagnostics?.find((diagnostic) => diagnostic.name === "worker")?.error ?? "", /removed frontmatter field 'fallbackModels'.*'fallbacks'/);
+	});
+
+	it("reads ordered fallbacks frontmatter as a list or comma string (fork)", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-agent-fallbacks-frontmatter-"));
+		tempDirs.push(dir);
+		const agentsDir = path.join(dir, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(path.join(agentsDir, "worker.md"), `---
+name: worker
+description: Worker
+model: nope/none
+fallbacks: openai/gpt-5-mini, anthropic/claude-sonnet-4
+---
+
+Do work
+`, "utf-8");
+		fs.writeFileSync(path.join(agentsDir, "lister.md"), `---
+name: lister
+description: Lister
+fallbacks:
+  - openai/gpt-5-mini
+  - "anthropic/claude-sonnet-4"
+---
+
+Do work
+`, "utf-8");
+		const result = discoverAgents(dir, "project");
+		assert.deepEqual(result.agents.find((agent) => agent.name === "worker")?.fallbacks, ["openai/gpt-5-mini", "anthropic/claude-sonnet-4"]);
+		assert.deepEqual(result.agents.find((agent) => agent.name === "lister")?.fallbacks, ["openai/gpt-5-mini", "anthropic/claude-sonnet-4"]);
 	});
 });
 

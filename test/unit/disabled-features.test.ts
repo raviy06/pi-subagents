@@ -236,7 +236,8 @@ describe("disabled feature discovery", () => {
 			for (const handler of handlers) await handler({ version: SUBAGENT_RPC_PROTOCOL_VERSION, requestId, method, params });
 			return replies.get(subagentRpcReplyEvent(requestId)) as { success: boolean; data?: { capabilities: { managementActions: string[] } }; error?: { message: string } };
 		};
-		assert.deepEqual((await request("ping", "ping")).data?.capabilities.managementActions, []);
-		assert.equal((await request("manage", "manage", { action: "schedule.bogus" })).error?.message, "RPC manage actions are all disabled by config.");
+		// Disabling scheduled runs removes every schedule.* action; the read-only agent catalogue (fork) is not a scheduling feature.
+		assert.deepEqual((await request("ping", "ping")).data?.capabilities.managementActions, ["agents.list", "agents.get", "models.list"]);
+		assert.equal((await request("manage", "manage", { action: "schedule.bogus" })).error?.message, "RPC manage action must be one of: agents.list, agents.get, models.list.");
 	});
 });

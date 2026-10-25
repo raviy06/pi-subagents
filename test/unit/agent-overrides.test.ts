@@ -140,14 +140,33 @@ describe("builtin agent overrides", () => {
 		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
 			subagents: { agentOverrides: { worker: { fallbackModels: ["model/backup"] } } },
 		});
-		assert.throws(() => discoverAgentsAll(tempProject), /removed field 'fallbackModels'; configure one model instead/u);
+		assert.throws(() => discoverAgentsAll(tempProject), /removed field 'fallbackModels'; use 'fallbacks'/u);
 	});
 
 	it("rejects removed fallbackModels in project agent overrides", () => {
 		writeJson(path.join(tempProject, ".pi", "settings.json"), {
 			subagents: { agentOverrides: { worker: { fallbackModels: ["model/backup"] } } },
 		});
-		assert.throws(() => discoverAgentsAll(tempProject), /removed field 'fallbackModels'; configure one model instead/u);
+		assert.throws(() => discoverAgentsAll(tempProject), /removed field 'fallbackModels'; use 'fallbacks'/u);
+	});
+
+	it("accepts ordered fallbacks in agent overrides, with project narrowing user and false clearing (fork)", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { worker: { model: "nope/none", fallbacks: ["openai/gpt-5-mini", " anthropic/claude-sonnet-4 ", "openai/gpt-5-mini"] }, reviewer: { fallbacks: "a/b, c/d" } } },
+		});
+		let worker = discoverAgentsAll(tempProject).builtin.find((agent) => agent.name === "worker");
+		assert.deepEqual(worker?.fallbacks, ["openai/gpt-5-mini", "anthropic/claude-sonnet-4"]);
+		assert.ok(worker?.override?.fields?.includes("fallbacks"));
+		assert.deepEqual(discoverAgentsAll(tempProject).builtin.find((agent) => agent.name === "reviewer")?.fallbacks, ["a/b", "c/d"]);
+
+		writeJson(path.join(tempProject, ".pi", "settings.json"), { subagents: { agentOverrides: { worker: { fallbacks: false } } } });
+		worker = discoverAgentsAll(tempProject).builtin.find((agent) => agent.name === "worker");
+		assert.equal(worker?.fallbacks, undefined);
+
+		writeJson(path.join(tempProject, ".pi", "settings.json"), { subagents: { agentOverrides: { worker: { fallbacks: ["x/1", "x/2", "x/3", "x/4", "x/5", "x/6", "x/7", "x/8", "x/9"] } } } });
+		assert.throws(() => discoverAgentsAll(tempProject), /at most 8/u);
+		writeJson(path.join(tempProject, ".pi", "settings.json"), { subagents: { agentOverrides: { worker: { fallbacks: [1] } } } });
+		assert.throws(() => discoverAgentsAll(tempProject), /only strings/u);
 	});
 
 	it("lets a builtin agent inherit Pi's normal tools from an override", () => {

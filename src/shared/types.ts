@@ -1317,6 +1317,8 @@ export interface SingleResult {
 	/** Effective thinking level used by this foreground child, when known. */
 	thinking?: string;
 	requestedModel?: string;
+	/** Fork addition: why a configured fallback replaced `requestedModel` at resolution time. */
+	fallbackReason?: string;
 	controlEvents?: ControlEvent[];
 	error?: string;
 	/**
@@ -1427,6 +1429,19 @@ export interface AgentCapabilitiesSnapshot {
 	agents: AgentCapabilityRow[];
 	restrictedCount: number;
 	capabilityCeilingSources?: string[];
+	/** Disabled agents listed with `disabled: true` and `executable: false` (fork addition; omitted when none). */
+	disabledCount?: number;
+}
+
+/** Where an agent definition came from and which operator settings changed it (fork addition for roster UIs). */
+export interface AgentCapabilityProvenance {
+	filePath?: string;
+	packageName?: string;
+	launcher?: string;
+	/** Builtin override applied from settings: scope, settings path and the overridden field names. */
+	override?: { scope: "user" | "project"; path: string; fields?: string[] };
+	/** `subagents.defaultModel` supplied the model. */
+	modelSource?: { type: "subagents.defaultModel"; scope: "user" | "project"; path: string };
 }
 
 export interface AgentCapabilityRow {
@@ -1443,6 +1458,10 @@ export interface AgentCapabilityRow {
 	acceptance?: { policy?: AcceptanceInput; role?: AcceptanceRole };
 	output?: { path?: string; mode?: OutputMode };
 	extensions?: { names?: string[]; subagentOnly?: string[]; skills?: string[] };
+	/** Present only for disabled agents (fork addition). */
+	disabled?: true;
+	/** Definition origin and applied operator settings (fork addition). */
+	provenance?: AgentCapabilityProvenance;
 }
 
 export interface Details {
@@ -2073,6 +2092,8 @@ export interface AsyncStatus {
 		contextLimit?: number;
 		thinkingCeiling?: ThinkingLevel;
 		requestedModel?: string;
+		/** Fork addition: resolution-time fallback reason when a configured fallback replaced `requestedModel`. */
+		fallbackReason?: string;
 		/** True when the child input exceeded the model context window. */
 		contextOverflow?: boolean;
 		totalCost?: CostSummary;
@@ -2747,6 +2768,8 @@ export interface ExtensionConfig {
 	fleetKeybindings?: FleetKeybindingsConfig;
 	/** Show the under-editor async runs widget. Defaults to true, including when FleetView is enabled. */
 	asyncWidget?: boolean;
+	/** Fork addition: include a short sanitized task preview on public `activityStatus` entries. Defaults to true. */
+	activityTaskPreview?: boolean;
 	/** Start the under-editor async runs widget folded. Defaults to false. */
 	asyncWidgetCollapsed?: boolean;
 	/** Unfolded async runs widget layout: "adaptive" fits run details to the terminal height, "rows" shows one line per run. Defaults to "adaptive". */

@@ -34,7 +34,7 @@ import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
 import { formatReviewGateLabel, validateAcceptanceInput } from "../runs/shared/acceptance.ts";
 import { CODE_OWNED_EXTERNAL_CLI_ADAPTER_LABEL, isCodeOwnedExternalCliAdapterId, resolveExternalCliRunnerStatus, validateCodeOwnedProfileRunner } from "../runs/shared/external-cli-contract.ts";
 import { resolveExternalCliBinaryAvailability, type ExternalCliBinaryAvailability } from "../runs/shared/external-cli-preflight.ts";
-import type { AcceptanceInput, AgentCapabilitiesSnapshot, AgentCapabilityRow, Details, ExtensionConfig, ToolBudgetConfig } from "../shared/types.ts";
+import type { AcceptanceInput, AgentCapabilitiesSnapshot, AgentCapabilityProvenance, AgentCapabilityRow, Details, ExtensionConfig, ToolBudgetConfig } from "../shared/types.ts";
 import { getProjectConfigDir } from "../shared/utils.ts";
 import { previewDisplayText } from "../shared/display-text.ts";
 import { capabilityCeilingAgentRestrictionSources, isAgentAllowedByCapabilityCeiling, resolveCurrentSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
@@ -825,7 +825,21 @@ function agentCapabilityTools(agent: AgentConfig): AgentCapabilityRow["tools"] {
 	};
 }
 
-function agentCapabilityRow(agent: AgentConfig, options: { executable: boolean; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictionSources?: string[] }): AgentCapabilityRow {
+/** Fork addition: definition origin and applied operator settings, for roster-style UIs. */
+function agentCapabilityProvenance(agent: AgentConfig): AgentCapabilityProvenance | undefined {
+	const provenance: AgentCapabilityProvenance = {};
+	if (agent.filePath) provenance.filePath = agent.filePath;
+	if (agent.packageName) provenance.packageName = agent.packageName;
+	if (agent.launcher) provenance.launcher = agent.launcher;
+	if (agent.override) {
+		provenance.override = { scope: agent.override.scope, path: agent.override.path };
+		if (agent.override.fields?.length) provenance.override.fields = [...agent.override.fields].sort();
+	}
+	if (agent.modelSource) provenance.modelSource = { type: agent.modelSource.type, scope: agent.modelSource.scope, path: agent.modelSource.path };
+	return Object.keys(provenance).length > 0 ? provenance : undefined;
+}
+
+function agentCapabilityRow(agent: AgentConfig, options: { executable: boolean; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictionSources?: string[]; disabled?: boolean }): AgentCapabilityRow {
 	return {
 		name: agent.name,
 		description: previewDisplayText(agent.description, 1000),
@@ -840,17 +854,22 @@ function agentCapabilityRow(agent: AgentConfig, options: { executable: boolean; 
 		acceptance: presentDetails({ policy: agent.defaultAcceptance, role: agent.acceptanceRole }),
 		output: presentDetails({ path: agent.output, mode: agent.outputMode }),
 		extensions: presentDetails({ names: agent.extensions, subagentOnly: agent.subagentOnlyExtensions, skills: agent.skills }),
+		...(options.disabled ? { disabled: true as const } : {}),
+		...(agentCapabilityProvenance(agent) ? { provenance: agentCapabilityProvenance(agent) } : {}),
 	};
 }
 
-function agentCapabilitiesSnapshot(input: { agents: AgentConfig[]; restrictedAgents: AgentConfig[]; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictedSources?: string[] }): AgentCapabilitiesSnapshot {
+function agentCapabilitiesSnapshot(input: { agents: AgentConfig[]; restrictedAgents: AgentConfig[]; disabledAgents?: AgentConfig[]; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictedSources?: string[] }): AgentCapabilitiesSnapshot {
+	const disabledAgents = input.disabledAgents ?? [];
 	return {
 		agents: [
 			...input.agents.map((agent) => agentCapabilityRow(agent, { executable: true, providerNames: input.providerNames, externalCliAvailability: input.externalCliAvailability })),
 			...input.restrictedAgents.map((agent) => agentCapabilityRow(agent, { executable: false, providerNames: input.providerNames, externalCliAvailability: input.externalCliAvailability, restrictionSources: input.restrictedSources })),
+			...disabledAgents.map((agent) => agentCapabilityRow(agent, { executable: false, providerNames: input.providerNames, externalCliAvailability: input.externalCliAvailability, disabled: true })),
 		],
 		restrictedCount: input.restrictedAgents.length,
 		...(input.restrictedSources?.length ? { capabilityCeilingSources: [...input.restrictedSources] } : {}),
+		...(disabledAgents.length ? { disabledCount: disabledAgents.length } : {}),
 	};
 }
 
@@ -881,12 +900,13 @@ function appendAgentDiagnosticLines(lines: string[], diagnostics: AgentDiscovery
 	);
 }
 
-function agentCapabilityDetails(input: { capabilityMode: boolean; agents: AgentConfig[]; restrictedAgents: AgentConfig[]; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictedSources?: string[] }): Partial<Details> | undefined {
+function agentCapabilityDetails(input: { capabilityMode: boolean; agents: AgentConfig[]; restrictedAgents: AgentConfig[]; disabledAgents?: AgentConfig[]; providerNames?: Set<string>; externalCliAvailability: ExternalCliAvailabilityByCommand; restrictedSources?: string[] }): Partial<Details> | undefined {
 	if (!input.capabilityMode) return undefined;
 	return {
 		agentCapabilities: jsonDetails(agentCapabilitiesSnapshot({
 			agents: input.agents,
 			restrictedAgents: input.restrictedAgents,
+			disabledAgents: input.disabledAgents,
 			providerNames: input.providerNames,
 			externalCliAvailability: input.externalCliAvailability,
 			restrictedSources: input.restrictedSources,
@@ -981,6 +1001,7 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 		.sort((a, b) => a.name.localeCompare(b.name));
 	const capabilityCeiling = resolveCurrentSubagentCapabilityCeiling(ctx.currentSessionId);
 	const visibleAgents = scopedAgents.filter((a) => !a.disabled);
+	const disabledAgents = params.capabilities === true ? scopedAgents.filter((a) => a.disabled) : [];
 	const agents = visibleAgents.filter((a) => isAgentAllowedByCapabilityCeiling(a.name, capabilityCeiling));
 	const restrictedAgents = visibleAgents.filter((a) => !isAgentAllowedByCapabilityCeiling(a.name, capabilityCeiling));
 	const restrictedSources = capabilityCeilingAgentRestrictionSources(capabilityCeiling);
@@ -1008,6 +1029,7 @@ export function handleList(params: ManagementParams, ctx: ManagementContext): Ag
 		capabilityMode,
 		agents,
 		restrictedAgents,
+		disabledAgents,
 		providerNames: providerNameSet,
 		externalCliAvailability: externalCliAvailability ?? new Map(),
 		restrictedSources,

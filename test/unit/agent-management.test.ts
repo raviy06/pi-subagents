@@ -190,6 +190,43 @@ describe("agent management config parsing", () => {
 		assert.equal(JSON.stringify(capabilities).includes("SYSTEM_PROMPT_SENTINEL"), false);
 	});
 
+	it("capability rows carry provenance and list disabled agents as non-executable (fork catalogue)", () => {
+		const agentsDir = path.join(tempDir, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		const filePath = path.join(agentsDir, "catalogue-worker.md");
+		fs.writeFileSync(filePath, "---\nname: catalogue-worker\ndescription: Catalogue worker\nmodel: openai/gpt-5-mini\n---\nWork.\n");
+		const settingsPath = path.join(tempDir, ".pi", "settings.json");
+		fs.writeFileSync(settingsPath, JSON.stringify({ subagents: { agentOverrides: { reviewer: { model: "openai/gpt-5-mini", thinking: "low" }, worker: { disabled: true } } } }));
+
+		const listed = handleManagementAction("list", { agentScope: "both", capabilities: true }, {
+			cwd: tempDir,
+			modelRegistry: { getAvailable: () => [{ provider: "openai", id: "gpt-5-mini" }] },
+		});
+		assert.equal(listed.isError, false);
+		const capabilities = listed.details?.agentCapabilities;
+		assert.ok(capabilities);
+
+		const project = capabilities.agents.find((agent) => agent.name === "catalogue-worker");
+		assert.ok(project);
+		assert.equal(project.source, "project");
+		assert.equal(project.provenance?.filePath, filePath);
+		assert.equal(project.disabled, undefined);
+
+		const reviewer = capabilities.agents.find((agent) => agent.name === "reviewer");
+		assert.ok(reviewer);
+		assert.equal(reviewer.source, "builtin");
+		assert.equal(reviewer.provenance?.override?.scope, "project");
+		assert.equal(reviewer.provenance?.override?.path, settingsPath);
+		assert.deepEqual(reviewer.provenance?.override?.fields, ["model", "thinking"]);
+
+		const worker = capabilities.agents.find((agent) => agent.name === "worker");
+		assert.ok(worker, "disabled agents appear in the catalogue");
+		assert.equal(worker.disabled, true);
+		assert.equal(worker.executable, false);
+		assert.equal(capabilities.disabledCount, 1);
+		assert.doesNotMatch(readText(listed), /^- worker \(/m, "text output keeps hiding disabled agents");
+	});
+
 	it("reports bundled reviewer supervisor contact without mutation tools in capabilities", () => {
 		const listed = handleManagementAction("list", { agentScope: "project", capabilities: true }, {
 			cwd: tempDir,

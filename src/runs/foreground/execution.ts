@@ -77,6 +77,7 @@ import {
 	isContextOverflow,
 	resolveModelSelection,
 } from "../shared/model-resolution.ts";
+import { resolveModelSelectionWithFallbacks } from "../shared/model-candidates.ts";
 import {
 	createMutatingFailureState,
 	didMutatingToolFail,
@@ -1837,7 +1838,7 @@ async function runSyncCompletionInner(
 	}
 	const systemPrompt = buildEffectiveSystemPrompt({ agent, resolvedSkills, cwd: skillCwd });
 
-	const { model: selectedModel, requestedModel } = resolveModelSelection(
+	const { model: selectedModel, requestedModel, fallbackReason } = resolveModelSelectionWithFallbacks(
 		options.modelOverride ?? agent.model,
 		options.availableModels,
 		agent.modelProvider ?? options.preferredModelProvider,
@@ -1845,6 +1846,7 @@ async function runSyncCompletionInner(
 			scope: options.modelScope,
 			primaryModelFromParent: options.modelOverrideFromParent,
 			origin: options.modelOrigin ?? (options.modelOverrideFromParent ? "inherited" : "configured"),
+			...(agent.fallbacks?.length ? { fallbacks: agent.fallbacks } : {}),
 		},
 	);
 	try {
@@ -2017,6 +2019,7 @@ async function runSyncCompletionInner(
 
 	result.usage = aggregateUsage;
 	result.requestedModel = requestedModel;
+	if (fallbackReason) result.fallbackReason = fallbackReason;
 	result.progressSummary = {
 		...(childSessionName ? { sessionName: childSessionName } : {}),
 		toolCount: totalToolCount,

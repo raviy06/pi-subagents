@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { registerActivityFoundations } from "../runs/shared/activity-foundations.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -739,6 +740,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		execute: executeSubagentReady,
 		state,
 		disabledFeatures,
+		activityTaskPreview: config.activityTaskPreview !== false,
 	});
 
 
@@ -891,9 +893,16 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		scheduledRunManager.handleAsyncCompletion(payload);
 		fleetStatus?.refresh();
 	};
+	// Fork addition: coalesced activity-changed events and durable per-run session records (read-only).
+	const activityFoundations = registerActivityFoundations({
+		events: pi.events,
+		state,
+		appendEntry: (customType, data) => pi.appendEntry(customType, data),
+	});
 	const eventUnsubscribes = [
 		registerRuntimeAgentEventListener(pi),
 		registerInspectorEventListener(pi),
+		activityFoundations.dispose,
 		pi.events.on(SUBAGENT_ASYNC_STARTED_EVENT, asyncStartedHandler),
 		pi.events.on(SUBAGENT_ASYNC_COMPLETE_EVENT, asyncCompleteHandler),
 		pi.events.on(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {

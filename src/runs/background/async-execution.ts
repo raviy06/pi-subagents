@@ -32,6 +32,7 @@ import { backgroundProcessOptions } from "../shared/background-process-options.t
 import { normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { PI_CODING_AGENT_PACKAGE_ROOT_ENV, PROMPT_REDACTED, resolveChildCwd } from "../../shared/utils.ts";
 import { resolveEffectiveSubagentModel, resolveModelOrigin, resolveModelSelection, resolveSubagentModelOverride, type AvailableModelInfo, type ModelOrigin, type ParentModel } from "../shared/model-resolution.ts";
+import { resolveModelSelectionWithFallbacks } from "../shared/model-candidates.ts";
 import { resolveToolTimeoutMs, toolTimeoutFromEnv } from "../shared/tool-timeout.ts";
 import { resolveModelScopesForAgent, type ModelScopeConfig } from "../shared/model-scope.ts";
 import { findModelInfo, resolveEffectiveThinking } from "../../shared/model-info.ts";
@@ -1209,14 +1210,17 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 		const permissionRules = resolvePermissionRules(ctx.permissions, a.permissions);
 		let selectedModel = model;
 		let requestedModel: string | undefined;
+		let fallbackReason: string | undefined;
 		if (!externalRunner) {
 			try {
-				const modelEvidence = resolveModelSelection(primaryModel, availableModels, a.modelProvider ?? ctx.currentModelProvider, {
+				const modelEvidence = resolveModelSelectionWithFallbacks(primaryModel, availableModels, a.modelProvider ?? ctx.currentModelProvider, {
 					scope: modelScopes,
 					primaryModelFromParent,
 					origin: modelOrigin,
+					...(a.fallbacks?.length ? { fallbacks: a.fallbacks } : {}),
 				});
 				requestedModel = modelEvidence.requestedModel;
+				fallbackReason = modelEvidence.fallbackReason;
 				selectedModel = applyThinkingSuffix(modelEvidence.model, effectiveThinking, thinkingOverride !== undefined);
 				assertThinkingWithinCeiling({ model: selectedModel, configThinking: effectiveThinking, ceiling: thinkingCeiling, agent: a.name, runId: id });
 			} catch (error) {
@@ -1277,6 +1281,7 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
 			...(thinkingCeiling ? { thinkingCeiling } : {}),
 			launchResolvedExtensions,
 			...(requestedModel ? { requestedModel } : {}),
+			...(fallbackReason ? { fallbackReason } : {}),
 			...(primaryModelFromParent ? { skipPrimaryModelVerification: true } : {}),
 			...(availableModels && availableModels.length > 0 ? { modelVerificationRegistry: availableModels } : {}),
 			...(ctx.modelResponseAliases ? { modelResponseAliases: ctx.modelResponseAliases } : {}),
@@ -2064,14 +2069,17 @@ export function executeAsyncSingle(
 		: undefined;
 	let selectedModel = model;
 	let requestedModel: string | undefined;
+	let fallbackReason: string | undefined;
 	if (!externalRunner) {
 		try {
-			const modelEvidence = resolveModelSelection(primaryModel, availableModels, agentConfig.modelProvider ?? ctx.currentModelProvider, {
+			const modelEvidence = resolveModelSelectionWithFallbacks(primaryModel, availableModels, agentConfig.modelProvider ?? ctx.currentModelProvider, {
 				scope: modelScopes,
 				primaryModelFromParent: modelOrigin === "inherited",
 				origin: modelOrigin,
+				...(agentConfig.fallbacks?.length ? { fallbacks: agentConfig.fallbacks } : {}),
 			});
 			requestedModel = modelEvidence.requestedModel;
+			fallbackReason = modelEvidence.fallbackReason;
 			selectedModel = applyThinkingSuffix(modelEvidence.model, effectiveThinking, params.thinkingOverride !== undefined);
 			assertThinkingWithinCeiling({ model: selectedModel, configThinking: effectiveThinking, ceiling: thinkingCeiling, agent: agentConfig.name, runId: id });
 		} catch (error) {
@@ -2222,6 +2230,7 @@ export function executeAsyncSingle(
 						thinking: resolveEffectiveThinking(selectedModel, effectiveThinking),
 						...(thinkingCeiling ? { thinkingCeiling } : {}),
 						...(requestedModel ? { requestedModel } : {}),
+						...(fallbackReason ? { fallbackReason } : {}),
 						...(modelOrigin === "inherited" ? { skipPrimaryModelVerification: true } : {}),
 						...(availableModels && availableModels.length > 0 ? { modelVerificationRegistry: availableModels } : {}),
 						...(ctx.modelResponseAliases ? { modelResponseAliases: ctx.modelResponseAliases } : {}),
