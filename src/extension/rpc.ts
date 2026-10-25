@@ -22,6 +22,8 @@ import {
 } from "../shared/types.ts";
 import { sanitizeDisplayText, truncateDisplayText } from "../shared/display-text.ts";
 import { ACTIVITY_STATUS_VERSION, buildActivityStatus } from "../runs/shared/activity-status-projection.ts";
+import { ACTIVITY_CHANGED_EVENT } from "../runs/shared/activity-change-notifier.ts";
+import { RUN_RECORD_ENTRY_TYPE } from "../runs/shared/run-record-entry.ts";
 import { readStatus } from "../shared/utils.ts";
 import { SubagentFlatParams } from "./schemas.ts";
 import { disabledFeatureUseError, type DisabledFeatureSurface } from "../shared/disabled-features.ts";
@@ -470,6 +472,8 @@ function pingData(ctx: ExtensionContext | null, options: RegisterSubagentRpcBrid
 			fleetStatus: { version: 1 },
 			activityStatus: { version: ACTIVITY_STATUS_VERSION },
 			agentsCatalog: { version: AGENTS_CATALOGUE_VERSION, actions: Object.keys(CATALOGUE_ACTIONS) },
+			activityEvents: { version: 1, event: ACTIVITY_CHANGED_EVENT },
+			runRecords: { version: 1, entryType: RUN_RECORD_ENTRY_TYPE },
 			asyncStatusSnapshot: { kind: ASYNC_STATUS_SNAPSHOT_KIND, version: ASYNC_STATUS_SNAPSHOT_VERSION },
 			asyncSpawn: true,
 			steer: true,

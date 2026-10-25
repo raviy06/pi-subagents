@@ -335,7 +335,10 @@ describe("subagent extension RPC bridge", () => {
 		});
 
 		const ping = await request(events, "ping-catalogue", "ping", {});
-		assert.deepEqual((ping as { data: { capabilities: { agentsCatalog?: unknown } } }).data.capabilities.agentsCatalog, { version: 1, actions: ["agents.list", "agents.get", "models.list"] });
+		const capabilities = (ping as { data: { capabilities: Record<string, unknown> } }).data.capabilities;
+		assert.deepEqual(capabilities.agentsCatalog, { version: 1, actions: ["agents.list", "agents.get", "models.list"] });
+		assert.deepEqual(capabilities.activityEvents, { version: 1, event: "subagents:activity:changed" });
+		assert.deepEqual(capabilities.runRecords, { version: 1, entryType: "subagents:record" });
 
 		const listed = await request(events, "manage-agents-list", "manage", { action: "agents.list", agentScope: "project" });
 		assert.equal(listed.success, true);
