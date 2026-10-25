@@ -2,24 +2,29 @@
 
 ## [Unreleased]
 
-## [0.81.2] - 2026-10-25
-
 ### Fixed
 
-- Create GitHub Releases as drafts, upload and verify package assets, then publish
-  them. This avoids HTTP 422 when immutable releases reject post-publication uploads.
-- Verify asset name, upload state, size and SHA-256 digest before finalization;
-  resume matching drafts safely and avoid modifying published immutable releases.
+- Create GitHub Releases as drafts and verify tarball name, upload state, size
+  and SHA-256 digest before publication, supporting immutable releases safely.
 - Resolve actual lightweight/annotated tag commits before and after publication;
-  reject source mismatches without retagging instead of trusting creation metadata.
-- Require exactly one nonempty, dated changelog section for the release version,
-  handling LF/CRLF and rejecting missing, duplicate or empty notes before publication.
+  reject mismatches without retagging and validate exact nonempty dated notes.
 
-### Release validation
+### Changed
 
-- Prepare the next new-version trusted-publication run after manual bootstrap.
-  Successful main CI and npm-environment approval remain required. No agent
-  runtime or dependency changes; OIDC publication is not yet claimed verified.
+- Ordinary PRs no longer require version bumps or new changelog entries. Prepare
+  grouped versioned notes in a dedicated release PR.
+- Skip publication and npm approval for main pushes without a package-version
+  change; verify release intent from successful same-commit main CI before the
+  protected publisher runs. OIDC publication remains unverified end-to-end.
+
+## [0.81.4] - 2026-10-25
+
+### Changed
+
+- Update oxlint and @oxlint/plugins from 1.80.0 to 1.89.0.
+- Retain Pi SDK 1.2.0 and TypeBox 1.3.27 development pins so minimum-host
+  compatibility coverage and provider diagnostic semantics remain unchanged.
+  The grouped update intentionally does not migrate the host SDK baseline.
 
 ## [0.81.1] - 2026-10-24
 

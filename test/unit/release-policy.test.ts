@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { validateRelease, newerVersion } from "../../scripts/check-release.mjs";
+import { validateRelease, newerVersion, versionChanged } from "../../scripts/check-release.mjs";
+import { execFileSync } from "node:child_process";
 import { versionExists, assertPublishOrder } from "../../scripts/npm-status.mjs";
 
 function fixture() {
@@ -37,6 +38,19 @@ test("release guard checks the actual distributable entry and prohibits private 
   assert.throws(()=>validateRelease(root,{name:pkg.name,packed:true}),/entry/);
   fs.writeFileSync(path.join(root,"dist-pkg/dist/index.js"),"export default () => {};\n");
   assert.ok(validateRelease(root,{name:pkg.name,packed:true}));
+ } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
+test("ordinary PRs can keep the same version and changelog",()=>{
+ const {root,pkg}=fixture();
+ try {
+  const hooks=path.join(root,"empty-hooks");fs.mkdirSync(hooks);
+  const git=args=>execFileSync("git",["-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","commit.gpgsign=false","-c",`core.hooksPath=${hooks}`,...args],{cwd:root,encoding:"utf8",stdio:["ignore","pipe","pipe"]});
+  git(["init","-q"]);git(["add","package.json"]);git(["commit","-qm","base"]);
+  const base=git(["rev-parse","HEAD"]).trim();
+  assert.equal(validateRelease(root,{name:pkg.name,base}).version,"0.1.1");
+  assert.equal(versionChanged("0.1.1","0.1.1"),false);
+  assert.equal(versionChanged("0.1.2","0.1.1"),true);
+  assert.throws(()=>versionChanged("0.1.0","0.1.1"),/downgrade/);
  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
 test("version policy rejects stale/downgrade versions and invalid semver",()=>{

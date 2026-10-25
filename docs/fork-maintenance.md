@@ -50,10 +50,11 @@ clone, overwrite, or delete an upstream shared-directory installation.
 
 ## Release checklist
 
-Every new extension PR must include a version bump **before opening the PR**.
-Additional commits to an unpublished PR share that prepared version. Keep the
-manifest, both root lockfile versions, release tests and dated changelog aligned.
-Verify the version is newer than fork main and not already published before merge.
+Ordinary feature, dependency, test and documentation PRs keep the current version
+and do not require a new changelog entry. Group reviewed changes into a release PR
+that bumps the manifest and both root lockfile versions and writes the dated batch
+changelog. Only release PRs prepare a newer version; ordinary PRs may retain it.
+Downgrades remain prohibited. Verify a release version is not already published.
 
 1. Confirm control of the npm `@raviy06` scope. Local login or trusted publishing
    must be configured explicitly; a matching GitHub username is not proof.
@@ -63,9 +64,15 @@ Verify the version is newer than fork main and not already published before merg
 3. Configure required reviewers for the fork's GitHub `npm` environment.
    Merely naming an environment does not create an approval policy.
 4. Verify full tests and packed smoke, and merge the release PR into fork main.
-5. After a successful **main push** Tests workflow, Publish queues a deployment
-   requiring `npm` environment approval. Manual dispatch on main is a recovery
-   option; it also requires successful main CI for that exact commit. The workflow
+5. Main push CI records the push's before/after package versions in a small
+   `release-intent` artifact, covering multi-commit/rebase merges. After successful
+   main CI, a read-only Publish job verifies the run identity and recomputes that
+   intent against Git objects. Unchanged versions skip publishing **before** any
+   npm approval is requested. Only a version-changing push queues deployment.
+   Manual dispatch uses the same successful CI run and saved intent; missing or
+   invalid artifacts fail closed, and ordinary commits cannot force a release.
+   Do not advance main while a release awaits approval: superseded release
+   commits still require a fresh release PR. The workflow
    checks out that commit, revalidates/builds, treats only npm HTTP 404 as absent,
    and skips republishing existing versions. Superseded main commits and new
    versions older than npm's current latest are refused. It publishes with provenance/public
@@ -83,7 +90,8 @@ Verify the version is newer than fork main and not already published before merg
 
 The stable aggregate `CI` check requires every existing native/platform smoke,
 package/release-policy checks, workflow validation and CodeQL to succeed. PR base
-comparison enforces a version bump; Dependabot PRs need one too before merge.
+comparison permits unchanged versions and rejects downgrades. Dependabot PRs do
+not need release metadata edits unless deliberately included in a release PR.
 
 No upstream token or trusted-publisher configuration is assumed inherited.
 Do not publish the root source or dispatch a workflow merely to test metadata.
