@@ -69,8 +69,14 @@ Verify the version is newer than fork main and not already published before merg
    checks out that commit, revalidates/builds, treats only npm HTTP 404 as absent,
    and skips republishing existing versions. Superseded main commits and new
    versions older than npm's current latest are refused. It publishes with provenance/public
-   scoped access and creates a `fork-v<version>` GitHub release (distinct from
-   inherited upstream tags). PR workflows never trigger publication.
+   scoped access and creates a **draft** `fork-v<version>` GitHub release (distinct
+   from inherited upstream tags), with the exact versioned changelog. It uploads
+   and verifies tarball names, state, sizes and SHA-256 digests before publishing
+   the draft, so immutable releases already contain their assets. PR workflows
+   never trigger publication.
+   Retries resume matching drafts or verify complete published releases. An
+   already-published immutable release missing assets requires a new version;
+   never delete or retag it to bypass immutability.
 6. Verify the actual npm version before telling users to update.
 
 The stable aggregate `CI` check requires every existing native/platform smoke,

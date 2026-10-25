@@ -55,6 +55,8 @@ jobs:
       - run: npm run typecheck && npm run test:all
       - run: npm run build:pkg
       - run: npm run check:release -- --packed
+      - name: Validate changelog content before publication
+        run: node scripts/github-release.mjs --validate-notes
       - name: Check registry (only 404 means unpublished)
         id: registry
         run: node scripts/npm-status.mjs >> "$GITHUB_OUTPUT"
@@ -68,25 +70,12 @@ jobs:
         run: npm publish ./dist-pkg --provenance --access public
       - name: Pack release artifact
         run: npm pack ./dist-pkg --ignore-scripts
-      - name: Create fork GitHub release after npm publication
+      - name: Create draft, verify assets and changelog, then publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.registry.outputs.version }}
-        run: |
-          node --input-type=module - <<'JS'
-          import fs from 'node:fs';
-          const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split('\n');
-          const start = lines.findIndex(line => line.startsWith(`## [${process.env.VERSION}] - `));
-          if (start < 0) throw new Error('Missing release notes');
-          const tail = lines.slice(start + 1);
-          const end = tail.findIndex(line => line.startsWith('## '));
-          fs.writeFileSync('/tmp/release-notes.md', (end < 0 ? tail : tail.slice(0, end)).join('\n'));
-          JS
-          tag="fork-v$VERSION"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$PACKAGE_NAME $VERSION" --notes-file /tmp/release-notes.md
-          fi
-          gh release upload "$tag" ./*.tgz --clobber
+          TAG_PREFIX: fork-v
+        run: node scripts/github-release.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: npm-package-${{ steps.registry.outputs.version }}

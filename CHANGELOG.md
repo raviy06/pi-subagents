@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.81.2] - 2026-10-25
+
+### Fixed
+
+- Create GitHub Releases as drafts, upload and verify package assets, then publish
+  them. This avoids HTTP 422 when immutable releases reject post-publication uploads.
+- Verify asset name, upload state, size and SHA-256 digest before finalization;
+  resume matching drafts safely and avoid modifying published immutable releases.
+- Require exactly one nonempty, dated changelog section for the release version,
+  handling LF/CRLF and rejecting missing, duplicate or empty notes before publication.
+
+### Release validation
+
+- Prepare the next new-version trusted-publication run after manual bootstrap.
+  Successful main CI and npm-environment approval remain required. No agent
+  runtime or dependency changes; OIDC publication is not yet claimed verified.
+
 ## [0.81.1] - 2026-10-24
 
 First release prepared for the `@raviy06/pi-subagents` fork, based on upstream

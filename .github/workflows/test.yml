@@ -301,6 +301,10 @@ jobs:
           fi
       - run: npm run build:pkg
       - run: npm run check:release -- --packed
+      - name: Validate versioned changelog content
+        env:
+          PACKAGE_NAME: '@raviy06/pi-subagents'
+        run: node scripts/github-release.mjs --validate-notes
       - run: npm pack ./dist-pkg --ignore-scripts --json
 
   workflows:
