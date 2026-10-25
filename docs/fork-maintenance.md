@@ -72,8 +72,10 @@ Verify the version is newer than fork main and not already published before merg
    scoped access and creates a **draft** `fork-v<version>` GitHub release (distinct
    from inherited upstream tags), with the exact versioned changelog. It uploads
    and verifies tarball names, state, sizes and SHA-256 digests before publishing
-   the draft, so immutable releases already contain their assets. PR workflows
-   never trigger publication.
+   the draft, so immutable releases already contain their assets. Remote tags
+   are resolved to actual commits (including annotated tags), checked before and
+   after publication, and never retagged on mismatch. Creation metadata is not
+   treated as proof. PR workflows never trigger publication.
    Retries resume matching drafts or verify complete published releases. An
    already-published immutable release missing assets requires a new version;
    never delete or retag it to bypass immutability.

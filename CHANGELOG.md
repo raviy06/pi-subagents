@@ -10,6 +10,8 @@
   them. This avoids HTTP 422 when immutable releases reject post-publication uploads.
 - Verify asset name, upload state, size and SHA-256 digest before finalization;
   resume matching drafts safely and avoid modifying published immutable releases.
+- Resolve actual lightweight/annotated tag commits before and after publication;
+  reject source mismatches without retagging instead of trusting creation metadata.
 - Require exactly one nonempty, dated changelog section for the release version,
   handling LF/CRLF and rejecting missing, duplicate or empty notes before publication.
 

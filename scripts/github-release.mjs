@@ -23,6 +23,20 @@ function runGh(args) {
  return execFileSync("gh",args,{encoding:"utf8",stdio:["ignore","pipe","pipe"]});
 }
 function normalizeNotes(text) {return String(text??"").replace(/\r\n/g,"\n").trim();}
+export function resolveTagCommit(repo,tag,gh=runGh) {
+ const raw=gh(["api",`repos/${repo}/git/matching-refs/tags/${encodeURIComponent(tag)}`,"--jq",`.[] | select(.ref == ${JSON.stringify("refs/tags/"+tag)}) | .object`]).trim();
+ if(!raw)return undefined;
+ let object=JSON.parse(raw);
+ const seen=new Set();
+ for(let depth=0;depth<=8;depth++){
+  assert.match(object?.sha??"",/^[a-f0-9]{40}$/,"Invalid remote tag object");
+  assert.ok(!seen.has(object.sha),"Remote tag cycle");seen.add(object.sha);
+  if(object.type==="commit")return object.sha;
+  assert.equal(object.type,"tag","Remote release tag does not resolve to a commit");
+  assert.ok(depth<8,"Remote tag nesting limit exceeded");
+  object=JSON.parse(gh(["api",`repos/${repo}/git/tags/${object.sha}`,"--jq",".object"]));
+ }
+}
 function assertAssets(release,expected) {
  for(const artifact of expected){
   const asset=release.assets?.find(item=>item.name===artifact.name);
@@ -56,13 +70,22 @@ export function publishGitHubRelease(options,gh=runGh) {
  const validate=release=>{
   assert.ok(release,"Release is not visible after creation");
   assert.equal(release.tag_name,tag,"Release tag mismatch");
-  assert.equal(release.target_commitish,target,"Existing release targets a different source commit");
   assert.equal(normalizeNotes(release.body),normalizeNotes(notes),"Release changelog mismatch");
  };
+ const verifyTag=release=>{
+  const commit=resolveTagCommit(repo,tag,gh);
+  if(commit!==undefined)assert.equal(commit,target,"Remote release tag points to a different source commit");
+  else {
+   assert.ok(!release||release.draft===true,"Published release is missing its remote tag commit");
+   if(release)assert.equal(release.target_commitish,target,"Draft release targets a different source commit");
+  }
+ };
  let release=lookup();
+ verifyTag(release);
  if(!release){
   gh(["release","create",tag,"--repo",repo,"--target",target,"--title",title,"--notes-file",notesFile,"--draft"]);
   release=lookup();
+  verifyTag(release);
  }
  validate(release);
  if(release.draft===false){
@@ -75,9 +98,11 @@ export function publishGitHubRelease(options,gh=runGh) {
  release=lookup();validate(release);
  assert.equal(release.draft,true,"Release was published before asset verification");
  assertAssets(release,expected);
+ verifyTag(release);
  gh(["release","edit",tag,"--repo",repo,"--draft=false","--latest"]);
  release=lookup();validate(release);assertAssets(release,expected);
  assert.equal(release.draft,false,"Release publication did not finish");
+ verifyTag(release);
  return {tag,alreadyPublished:false};
 }
 

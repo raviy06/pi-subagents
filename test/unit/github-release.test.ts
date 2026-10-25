@@ -15,11 +15,17 @@ function fixture() {
  const metadata={name:path.basename(asset),state:"uploaded",size:fs.statSync(asset).size,digest:"sha256:"+createHash("sha256").update(fs.readFileSync(asset)).digest("hex")};
  return {root,metadata,options:{repo:"owner/repo",tag:"v0.1.2",target:"a".repeat(40),title:"Package 0.1.2",notesFile:notes,assets:[asset]}};
 }
-function fakeGh(options,metadata,initial) {
+function fakeGh(options,metadata,initial,remoteTag,tagObjects={}) {
  let release=initial;const calls=[];
+ let tag=remoteTag===undefined&&initial&&!initial.draft?{type:"commit",sha:options.target}:remoteTag;
  const run=args=>{
   calls.push(args);
-  if(args[0]==="api")return release?JSON.stringify(release):"";
+  if(args[0]==="api"){
+   const endpoint=args.find(arg=>arg.startsWith("repos/"))??"";
+   if(endpoint.includes("/git/matching-refs/"))return tag?JSON.stringify(tag):"";
+   if(endpoint.includes("/git/tags/"))return JSON.stringify(tagObjects[endpoint.split("/").at(-1)]);
+   return release?JSON.stringify(release):"";
+  }
   if(args[1]==="create"){
    assert.ok(args.includes("--draft"));
    release={tag_name:options.tag,draft:true,target_commitish:options.target,assets:[],body:fs.readFileSync(options.notesFile,"utf8")};
@@ -27,10 +33,11 @@ function fakeGh(options,metadata,initial) {
    assert.equal(release.draft,true,"assets must be attached while draft");release.assets=[metadata];
   }else if(args[1]==="edit"&&args.includes("--draft=false")){
    assert.equal(release.assets.length,1,"cannot publish an empty release");release.draft=false;release.immutable=true;
+   tag??={type:"commit",sha:options.target};
   }
   return "";
  };
- return {run,calls,get release(){return release;}};
+ return {run,calls,get release(){return release;},get tag(){return tag;},set tag(value){tag=value;}};
 }
 test("draft creation, asset verification and publication happen in that order",()=>{
  const f=fixture();try{
@@ -74,6 +81,34 @@ test("wrong asset digests or source commits never get published",()=>{
   const wrong=fakeGh(f.options,f.metadata,{tag_name:f.options.tag,draft:true,target_commitish:"b".repeat(40),assets:[]});
   assert.throws(()=>publishGitHubRelease(f.options,wrong.run),/commit/);
   assert.equal(wrong.calls.some(args=>args[0]==="release"),false);
+ }finally{fs.rmSync(f.root,{recursive:true,force:true});}
+});
+test("matching creation metadata cannot hide an existing tag at the wrong commit",()=>{
+ const f=fixture();try{
+  for(const initial of [undefined,{tag_name:f.options.tag,draft:false,immutable:true,target_commitish:f.options.target,assets:[f.metadata],body:fs.readFileSync(f.options.notesFile,"utf8")}]){
+   const gh=fakeGh(f.options,f.metadata,initial,{type:"commit",sha:"b".repeat(40)});
+   assert.throws(()=>publishGitHubRelease(f.options,gh.run),/tag.*commit/i);
+   assert.equal(gh.calls.some(args=>args[0]==="release"),false);
+  }
+ }finally{fs.rmSync(f.root,{recursive:true,force:true});}
+});
+test("annotated tags are peeled to their actual commit",()=>{
+ const f=fixture();try{
+  const initial={tag_name:f.options.tag,draft:false,immutable:true,target_commitish:"main",assets:[f.metadata],body:fs.readFileSync(f.options.notesFile,"utf8")};
+  const gh=fakeGh(f.options,f.metadata,initial,{type:"tag",sha:"c".repeat(40)},{["c".repeat(40)]:{type:"tag",sha:"d".repeat(40)},["d".repeat(40)]:{type:"commit",sha:f.options.target}});
+  publishGitHubRelease(f.options,gh.run);
+  assert.equal(gh.calls.some(args=>args[0]==="release"),false);
+  assert.equal(gh.calls.filter(args=>args.some(arg=>arg.includes("/git/tags/"))).length,2);
+ }finally{fs.rmSync(f.root,{recursive:true,force:true});}
+});
+test("a tag changed during publication is detected afterward without retagging",()=>{
+ const f=fixture();try{
+  const gh=fakeGh(f.options,f.metadata);
+  assert.throws(()=>publishGitHubRelease(f.options,args=>{
+   const result=gh.run(args);
+   if(args.includes("--draft=false"))gh.tag={type:"commit",sha:"b".repeat(40)};
+   return result;
+  }),/tag.*commit/i);
  }finally{fs.rmSync(f.root,{recursive:true,force:true});}
 });
 test("note validation runs before publication without GitHub credentials or mutation",()=>{
