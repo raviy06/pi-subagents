@@ -90,6 +90,7 @@ export function serializeAgent(config: AgentConfig, options: SerializeAgentOptio
 	}
 
 	if (config.model || preserve("model")) lines.push(`model: ${config.model ?? ""}`);
+	if (config.fallbacks?.length || preserve("fallbacks")) lines.push(`fallbacks: ${(config.fallbacks ?? []).join(", ")}`);
 	if (config.fast === true || preserve("fast")) lines.push(`fast: ${config.fast === undefined ? "" : config.fast ? "true" : "false"}`);
 	if ((config.thinking && (config.thinking !== "off" || preserve("thinking"))) || (!config.thinking && preserve("thinking"))) {
 		lines.push(`thinking: ${config.thinking ?? ""}`);

@@ -1453,7 +1453,7 @@ export interface AgentCapabilityRow {
 	aliases?: string[];
 	runner: { type: "pi" } | { type: "external-cli"; adapter?: string; command: string; machine?: string; available: boolean; unavailableReason?: string; capabilities: ExternalCliCapabilities } | { type: "external-job"; provider: string; available?: boolean; capabilities: ExternalJobRunnerStatus["capabilities"] };
 	tools: { ambient: boolean; names: string[]; excludeTools?: string[]; mcpDirectTools: string[]; mutationTools?: string[] };
-	model?: { value?: string; thinking?: string | false };
+	model?: { value?: string; thinking?: string | false; fallbacks?: string[] };
 	execution?: { defaultAsync?: boolean; timeoutMs?: number };
 	acceptance?: { policy?: AcceptanceInput; role?: AcceptanceRole };
 	output?: { path?: string; mode?: OutputMode };

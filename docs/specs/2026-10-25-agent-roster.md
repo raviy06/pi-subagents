@@ -92,9 +92,10 @@ Data, in pi settings (user `~/.pi/agent/settings.json`, project `.pi/settings.js
 }
 ```
 
-- **Assignments** are projected into `subagents.agentOverrides.<name>.{model,fallbacks,thinking}` by the roster (one canonical, diffable settings file; model resolution is unchanged). The roster shows a diff and asks before writing.
+- **Assignments** *are* `subagents.agentOverrides.<name>.{model,fallbacks,thinking}` (or agent frontmatter). There is no separate `agentRoster.assignments` key: one canonical place, nothing to project or keep in sync. Editing goes through the existing `/subagents <agent>` admin (scope-aware, confirmed), which gains a *Change fallbacks* action. *(Amended during implementation; the JSON example above predates this and its `assignments` block should be read as `subagents.agentOverrides`.)*
 - **Teams** compile to workflow scripts from a **shape** and are registered at `session_start` through the fork's internal workflow-resource registry (same contract as `registerWorkflowResource`) (name `team.<name>`, version = hash of the team definition). Built-in shapes: `parallel` (`runs.all`), `council` (members in parallel → chair synthesis → up to `passes` bounded cross-exam rounds via `resume`), `pipeline` (member N's output feeds N+1). A user shape is a `.js` file in `~/.pi/agent/workflows/shapes/<shape>.js` or `.pi/workflows/shapes/<shape>.js` exporting `compile(team, args) → script`.
-- **UI** `/roster` with tabs Agents (catalogue + assignment + enable/disable/eject/scaffold), Models (pi `enabledModels` ∩ fork `modelScope`, cost from `cost` RPC, assignments that fall outside scope flagged *before* a launch fails), Teams (create/edit), Runs (`activityStatus`, deep-link `/subagents-fleet <id>`, steer/stop over RPC).
+- **UI** `/roster` v1 is text-first: overview (agents by source with model chain, thinking, provenance flags; teams with launch form; warnings and settings diagnostics), `agent <name>` → admin, `team <name>`, `team add|remove` with a confirmed JSON preview, `run <team> <task>`, `reload`. A tabbed TUI (Models tab with `enabledModels` ∩ `modelScope`, Runs tab with steer/stop) is a follow-up once the data surfaces are proven.
+- **pi-minimal.** The `activity` footer slot is owned by `pi-agent-activity`; the roster publishes nothing there (one owner per slot), so no duplicate rows appear. A management panel slot is a pi-minimal host feature to propose later.
 - Settings resolution follows pi's project-over-user precedence (same pattern as gauntlet's `gauntlet_setting`).
 
 ### Compatibility and policy

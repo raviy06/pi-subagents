@@ -11,6 +11,7 @@ import {
 	type BuiltinAgentOverrideBase,
 } from "../agents/agents.ts";
 import { serializeAgent } from "../agents/agent-serializer.ts";
+import { normalizeFallbacks } from "../runs/shared/model-candidates.ts";
 import { mergeRuntimeAgents, type RuntimeAgentOwner } from "../agents/runtime-agent-registry.ts";
 import { editableAgentConfig, preservedAgentFrontmatterFields } from "../agents/agent-management.ts";
 import { findModelInfo, getSupportedThinkingLevels, toModelInfo } from "../shared/model-info.ts";
@@ -114,7 +115,7 @@ function buildBuiltinBase(agent: AgentConfig): BuiltinAgentOverrideBase {
 	};
 }
 
-type EditableOverrideField = "model" | "thinking" | "systemPrompt";
+type EditableOverrideField = "model" | "thinking" | "systemPrompt" | "fallbacks";
 
 type AgentSelection =
 	| { kind: "selected"; agent: AgentConfig }
@@ -133,6 +134,7 @@ function savesThroughSettings(agent: AgentConfig, field: EditableOverrideField):
 	if (agent.source !== agent.override.scope) return false;
 	// Compare the effective value with the pre-override base so an override on one
 	// field does not redirect edits to an unrelated frontmatter-owned field.
+	if (field === "fallbacks") return JSON.stringify(agent.fallbacks ?? []) !== JSON.stringify(agent.override.base.fallbacks ?? []);
 	return agent[field] !== agent.override.base[field];
 }
 
@@ -355,7 +357,7 @@ async function saveAgentThinking(ctx: ExtensionContext, agent: AgentConfig, sele
 function metadataSummary(agent: AgentConfig): string {
 	return [
 		`Source: ${agent.source}`,
-		`Model: ${agent.model ?? "default / inherit"}`,
+		`Model: ${agent.model ?? "default / inherit"}${agent.fallbacks?.length ? ` → ${agent.fallbacks.join(" → ")}` : ""}`,
 		`Thinking: ${agent.thinking === false ? "off" : agent.thinking ?? "default / inherit"}`,
 	].join(" · ");
 }
@@ -377,6 +379,48 @@ async function saveAgentSystemPrompt(ctx: ExtensionContext, agent: AgentConfig, 
 		preserveFrontmatterFields: preservedAgentFrontmatterFields(agent, { systemPrompt: nextPrompt }),
 	}), "utf-8");
 	return `Updated '${agent.name}' system prompt in ${updated.filePath}.`;
+}
+
+/** Fork addition (roster): edit the ordered resolution-time fallback models. Empty input clears them. */
+async function editFallbacks(ctx: ExtensionContext, agent: AgentConfig): Promise<string | null> {
+	const saveThroughSettings = savesThroughSettings(agent, "fallbacks");
+	if (!saveThroughSettings) {
+		const readOnlyMessage = readOnlyAgentMessage(agent, "fallbacks");
+		if (readOnlyMessage) return readOnlyMessage;
+	}
+	const current = agent.fallbacks?.join(", ") ?? "";
+	const edited = await ctx.ui.input(`Fallback models for '${agent.name}' (comma-separated, in order; empty clears)`, current);
+	if (edited === undefined) return null;
+	let fallbacks: string[];
+	try {
+		fallbacks = normalizeFallbacks(edited, `'${agent.name}' fallbacks`);
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	if (JSON.stringify(fallbacks) === JSON.stringify(agent.fallbacks ?? [])) return `Fallbacks for '${agent.name}' left unchanged.`;
+	if (saveThroughSettings) {
+		const scope = await chooseOverrideScope(ctx, agent);
+		if (!scope) return null;
+		if (fallbacks.length === 0) {
+			const base = agent.override?.base ?? buildBuiltinBase(agent);
+			const filePath = base.fallbacks?.length
+				? mergeBuiltinAgentOverride(ctx.cwd, agent.name, scope, { fallbacks: false })
+				: removeBuiltinAgentOverrideFields(ctx.cwd, agent.name, scope, ["fallbacks"]).path;
+			return `Cleared fallbacks for '${agent.name}' in ${filePath}.`;
+		}
+		const filePath = mergeBuiltinAgentOverride(ctx.cwd, agent.name, scope, { fallbacks });
+		return `Saved ${scope} settings override for '${agent.name}' with fallbacks ${fallbacks.join(" → ")} in ${filePath}.`;
+	}
+	const readOnlyMessage = readOnlyAgentMessage(agent, "fallbacks");
+	if (readOnlyMessage) return readOnlyMessage;
+	const updated = editableAgentConfig(agent);
+	if (fallbacks.length === 0) delete updated.fallbacks; else updated.fallbacks = fallbacks;
+	fs.writeFileSync(updated.filePath, serializeAgent(updated, {
+		preserveFrontmatterFields: preservedAgentFrontmatterFields(agent, { fallbacks }),
+	}), "utf-8");
+	return fallbacks.length
+		? `Updated '${agent.name}' fallbacks to ${fallbacks.join(" → ")} in ${updated.filePath}.`
+		: `Cleared '${agent.name}' fallbacks in ${updated.filePath}.`;
 }
 
 async function editSystemPrompt(ctx: ExtensionContext, agent: AgentConfig): Promise<string | null> {
@@ -420,12 +464,13 @@ export async function openSubagentsAdmin(pi: ExtensionAPI, ctx: ExtensionContext
 	let action: string | undefined;
 	if (requestedAction === "model") action = "Change model";
 	else if (requestedAction === "thinking") action = "Change thinking level";
+	else if (requestedAction === "fallbacks") action = "Change fallbacks";
 	else if (requestedAction === "prompt" || requestedAction === "system-prompt" || requestedAction === "edit") action = "Edit system prompt";
 	else if (requestedAction === "details" || requestedAction === "info") action = "Show details";
 	if (!action) {
 		action = await ctx.ui.select(
 			`Administer ${agent.name}\n${metadataSummary(agent)}`,
-			["Change model", "Change thinking level", "Edit system prompt", "Show details", "Done"],
+			["Change model", "Change thinking level", "Change fallbacks", "Edit system prompt", "Show details", "Done"],
 		);
 	}
 
@@ -441,6 +486,11 @@ export async function openSubagentsAdmin(pi: ExtensionAPI, ctx: ExtensionContext
 			const selectedThinking = await chooseThinking(ctx, agent);
 			if (selectedThinking === null) return;
 			const message = await saveAgentThinking(ctx, agent, selectedThinking);
+			if (message === null) return;
+			ctx.ui.notify(message, "info");
+			sendAdminMessage(pi, message);
+		} else if (action === "Change fallbacks") {
+			const message = await editFallbacks(ctx, agent);
 			if (message === null) return;
 			ctx.ui.notify(message, "info");
 			sendAdminMessage(pi, message);
