@@ -1427,6 +1427,19 @@ export interface AgentCapabilitiesSnapshot {
 	agents: AgentCapabilityRow[];
 	restrictedCount: number;
 	capabilityCeilingSources?: string[];
+	/** Disabled agents listed with `disabled: true` and `executable: false` (fork addition; omitted when none). */
+	disabledCount?: number;
+}
+
+/** Where an agent definition came from and which operator settings changed it (fork addition for roster UIs). */
+export interface AgentCapabilityProvenance {
+	filePath?: string;
+	packageName?: string;
+	launcher?: string;
+	/** Builtin override applied from settings: scope, settings path and the overridden field names. */
+	override?: { scope: "user" | "project"; path: string; fields?: string[] };
+	/** `subagents.defaultModel` supplied the model. */
+	modelSource?: { type: "subagents.defaultModel"; scope: "user" | "project"; path: string };
 }
 
 export interface AgentCapabilityRow {
@@ -1443,6 +1456,10 @@ export interface AgentCapabilityRow {
 	acceptance?: { policy?: AcceptanceInput; role?: AcceptanceRole };
 	output?: { path?: string; mode?: OutputMode };
 	extensions?: { names?: string[]; subagentOnly?: string[]; skills?: string[] };
+	/** Present only for disabled agents (fork addition). */
+	disabled?: true;
+	/** Definition origin and applied operator settings (fork addition). */
+	provenance?: AgentCapabilityProvenance;
 }
 
 export interface Details {

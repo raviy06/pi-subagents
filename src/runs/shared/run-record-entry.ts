@@ -118,7 +118,7 @@ function normalizeTask(task: string | undefined): string | undefined {
 }
 
 function normalizeModel(model: RunRecordModel | undefined): RunRecordModel | undefined {
-	if (!model || typeof model !== "object") return undefined;
+	if (!model) return undefined;
 	const result: RunRecordModel = {};
 	const requested = nonEmptyString(model.requested);
 	if (requested !== undefined) result.requested = requested;
@@ -130,7 +130,7 @@ function normalizeModel(model: RunRecordModel | undefined): RunRecordModel | und
 }
 
 function normalizeUsage(usage: RunRecordFacts["usage"]): RunRecord["usage"] | undefined {
-	if (!usage || typeof usage !== "object") return undefined;
+	if (!usage) return undefined;
 	const input = finiteNumber(usage.input);
 	const output = finiteNumber(usage.output);
 	if (input === undefined || output === undefined || input < 0 || output < 0) return undefined;
