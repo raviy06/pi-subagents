@@ -10,12 +10,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: npm-release
-  cancel-in-progress: false
-
 jobs:
-  publish:
+  detect:
     if: >-
       github.repository == 'raviy06/pi-subagents' &&
       ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
@@ -23,7 +19,55 @@ jobs:
         github.event.workflow_run.head_repository.full_name == github.repository) ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      release: ${{ steps.intent.outputs.release }}
+      sha: ${{ steps.intent.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Load intent from successful same-commit main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$sha" = "$main_sha" || { echo "Refusing superseded main commit"; exit 1; }
+          run_id="$CI_RUN_ID"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$sha&event=push&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | first | .id // empty')"
+          fi
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "No successful main CI run"; exit 1; }
+          proof="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '[.head_sha,.head_branch,.event,.conclusion,.path] | join("|")')"
+          test "$proof" = "$sha|main|push|success|.github/workflows/test.yml"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name release-intent --dir "$RUNNER_TEMP/release-intent"
+      - name: Verify version-change intent against Git objects
+        id: intent
+        env:
+          PACKAGE_NAME: '@raviy06/pi-subagents'
+        run: node scripts/release-intent.mjs --verify "$RUNNER_TEMP/release-intent/release-intent.json" --sha "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Skip ordinary main changes
+        if: steps.intent.outputs.release != 'true'
+        run: echo 'Package version unchanged; no publication or npm approval requested.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 25
+    concurrency:
+      group: npm-release
+      cancel-in-progress: false
     environment: npm
     permissions:
       contents: write
@@ -34,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.detect.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Require successful main CI for this exact commit
@@ -55,6 +99,8 @@ jobs:
       - run: npm run typecheck && npm run test:all
       - run: npm run build:pkg
       - run: npm run check:release -- --packed
+      - name: Validate changelog content before publication
+        run: node scripts/github-release.mjs --validate-notes
       - name: Check registry (only 404 means unpublished)
         id: registry
         run: node scripts/npm-status.mjs >> "$GITHUB_OUTPUT"
@@ -68,25 +114,12 @@ jobs:
         run: npm publish ./dist-pkg --provenance --access public
       - name: Pack release artifact
         run: npm pack ./dist-pkg --ignore-scripts
-      - name: Create fork GitHub release after npm publication
+      - name: Create draft, verify assets and changelog, then publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.registry.outputs.version }}
-        run: |
-          node --input-type=module - <<'JS'
-          import fs from 'node:fs';
-          const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split('\n');
-          const start = lines.findIndex(line => line.startsWith(`## [${process.env.VERSION}] - `));
-          if (start < 0) throw new Error('Missing release notes');
-          const tail = lines.slice(start + 1);
-          const end = tail.findIndex(line => line.startsWith('## '));
-          fs.writeFileSync('/tmp/release-notes.md', (end < 0 ? tail : tail.slice(0, end)).join('\n'));
-          JS
-          tag="fork-v$VERSION"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$PACKAGE_NAME $VERSION" --notes-file /tmp/release-notes.md
-          fi
-          gh release upload "$tag" ./*.tgz --clobber
+          TAG_PREFIX: fork-v
+        run: node scripts/github-release.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: npm-package-${{ steps.registry.outputs.version }}
