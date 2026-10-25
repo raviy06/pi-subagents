@@ -349,6 +349,14 @@ Controls the under-editor widget for active background runs. It defaults to `tru
 
 Controls whether public `activityStatus` entries (read by companion UIs such as `pi-agent-activity`) carry a sanitized, at most 120-character preview of each child's task. Defaults to `true`. Set it to `false` to keep every prompt-derived text out of the snapshot; tool arguments, paths and labels are never exported either way. See [extension API](extension-api.md#activity-status-dto-fork-addition).
 
+## `mentions` (fork addition)
+
+```json
+{ "mentions": true }
+```
+
+Routes an interactive prompt that starts with `@<agent>` or `@<team>` to that agent or team without a model turn (launch, or steer the agent's single live run), adds `@` completions for agents and teams next to pi's file picker, and treats `@main` as "talk to the main model". Defaults to `true`. Unknown handles, paths and mid-text mentions are never intercepted. See [roster](roster.md#mentions-at-the-prompt).
+
 ## `asyncWidgetCollapsed`
 
 ```json

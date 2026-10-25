@@ -619,11 +619,14 @@ export function registerSlashCommands(
 		rosterRuntime?: RosterRuntime;
 		/** Fork addition (roster): config.activityTaskPreview, for the Runs tab. */
 		activityTaskPreview?: boolean;
+		/** Fork addition (roster): config.mentions, `@handle` prompt routing. */
+		mentions?: boolean;
 	} = {},
 ): { dispose: () => void } {
 	let fleetOpen = false;
 	let disposed = false;
 	const pendingRequests = new Set<AbortController>();
+	const disposers: Array<() => void> = [];
 	const runCommand = (ctx: ExtensionContext, params: SubagentParamsLike): Promise<void> => {
 		if (disposed) return Promise.resolve();
 		const controller = new AbortController();
@@ -660,7 +663,8 @@ export function registerSlashCommands(
 	});
 
 	if (options.rosterRuntime) {
-		registerRosterCommands(pi, state, { runtime: options.rosterRuntime, runCommand, openAgentAdmin: openSubagentsAdmin, ...(options.activityTaskPreview !== undefined ? { activityTaskPreview: options.activityTaskPreview } : {}) });
+		const roster = registerRosterCommands(pi, state, { runtime: options.rosterRuntime, runCommand, openAgentAdmin: openSubagentsAdmin, ...(options.activityTaskPreview !== undefined ? { activityTaskPreview: options.activityTaskPreview } : {}), ...(options.mentions !== undefined ? { mentions: options.mentions } : {}) });
+		disposers.push(roster.dispose);
 	}
 
 	pi.registerCommand("run", {
@@ -1114,6 +1118,7 @@ export function registerSlashCommands(
 			// resume a command against the old Pi context.
 			for (const controller of pendingRequests) controller.abort();
 			pendingRequests.clear();
+			for (const dispose of disposers.splice(0)) dispose();
 		},
 	};
 }

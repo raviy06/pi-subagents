@@ -19,6 +19,7 @@ import { removeTeam, teamToSettings, writeTeam, type RosterScope } from "./setti
 import type { RosterRuntime } from "./runtime.ts";
 import { teamResourceName, type TeamDefinition } from "./teams.ts";
 import { RosterComponent, type RosterComponentData, type RosterResult, type RosterTab } from "./tui.ts";
+import { resolveMention, withMentionCompletions, type MentionCatalogue } from "./mentions.ts";
 
 export interface RegisterRosterCommandsOptions {
 	runtime: RosterRuntime;
@@ -26,6 +27,8 @@ export interface RegisterRosterCommandsOptions {
 	openAgentAdmin: (pi: ExtensionAPI, ctx: ExtensionContext, args: string) => Promise<void>;
 	/** Whether activity entries carry the task preview (config.activityTaskPreview). */
 	activityTaskPreview?: boolean;
+	/** `@handle` prompt routing (config.mentions). Defaults to true. */
+	mentions?: boolean;
 }
 
 function send(pi: ExtensionAPI, text: string): void {
@@ -235,5 +238,42 @@ export function registerRosterCommands(pi: ExtensionAPI, state: SubagentState, o
 		},
 	});
 
-	return { dispose() { /* pi owns command registrations for the runtime lifetime */ } };
+	// ---- @mention routing -----------------------------------------------------------------------
+	const mentionCatalogue = (ctx: ExtensionContext): MentionCatalogue => {
+		const { names } = catalogueNames(pi, ctx);
+		const current = runtime.state().settings ?? runtime.refresh(names).settings;
+		const liveRuns: Array<{ id: string; agent: string }> = [];
+		for (const job of state.asyncJobs.values()) {
+			if (job.status !== "running" && job.status !== "queued") continue;
+			if (job.sessionId && state.currentSessionId && job.sessionId !== state.currentSessionId) continue;
+			const agent = job.agents?.length === 1 ? job.agents[0] : job.steps?.length === 1 ? job.steps[0]?.agent : undefined;
+			if (agent) liveRuns.push({ id: job.asyncId, agent });
+		}
+		return { agents: names, teams: Object.keys(current?.teams ?? {}), liveRuns };
+	};
+	const unsubscribes: Array<() => void> = [];
+	if (options.mentions !== false) {
+		unsubscribes.push(pi.on("input", async (event, ctx) => {
+			if (event.source !== "interactive") return { action: "continue" };
+			if (!/^\s*@/.test(event.text)) return { action: "continue" };
+			const resolution = resolveMention(event.text, mentionCatalogue(ctx));
+			switch (resolution.kind) {
+				case "none": return { action: "continue" };
+				case "main": return { action: "transform", text: resolution.text, ...(event.images ? { images: event.images } : {}) };
+				case "empty": ctx.ui.notify(`Write the task after @${resolution.handle}, e.g. "@${resolution.handle} review the diff".`, "warning"); return { action: "handled" };
+				case "ambiguous": ctx.ui.notify(`@${resolution.agent} has ${resolution.runIds.length} live runs (${resolution.runIds.join(", ")}); steer one with /subagents-steer <id> <message>.`, "warning"); return { action: "handled" };
+				case "team": state.lastUiContext = ctx; await runTeam(ctx, resolution.name, resolution.task); return { action: "handled" };
+				case "steer": state.lastUiContext = ctx; await options.runCommand(ctx, { action: "steer", id: resolution.runId, message: resolution.message }); return { action: "handled" };
+				case "launch": state.lastUiContext = ctx; await options.runCommand(ctx, { agent: resolution.agent, task: resolution.task, async: true }); return { action: "handled" };
+			}
+		}));
+		let completionsInstalled = false;
+		unsubscribes.push(pi.on("session_start", (_event, ctx) => {
+			if (completionsInstalled || !ctx.hasUI || typeof ctx.ui.addAutocompleteProvider !== "function") return;
+			completionsInstalled = true;
+			ctx.ui.addAutocompleteProvider((current) => withMentionCompletions(current, () => mentionCatalogue(ctx)));
+		}));
+	}
+
+	return { dispose() { for (const unsubscribe of unsubscribes.splice(0)) unsubscribe(); } };
 }

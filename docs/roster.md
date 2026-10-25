@@ -111,6 +111,25 @@ A team result is plain JSON: `parallel` returns `{ team, shape, members, results
 `pipeline` returns `{ team, shape, stages[], output }`, `council` returns
 `{ team, shape, chair, members, passes, rounds[], memo, memoRunId, memberRunIds }`.
 
+## `@mentions` at the prompt
+
+A prompt that **starts** with `@<agent>` or `@<team>` goes straight to that agent or team, with
+no model turn in between:
+
+```
+@review-pair review the diff on this branch        → launches team.review-pair in the background
+@worker implement the fix with tests               → launches the worker agent
+@scout also check the RPC path                     → steers scout's single live run
+@main continue the plan                            → strips the prefix and talks to the main model
+```
+
+Typing `@` at the start of the prompt completes teams first, then agents (live ones marked), then
+`@main`, alongside pi's normal `@file` picker. Anything else is left for the model: an unknown
+handle, a path such as `@src/index.ts`, or a mention in the middle of a sentence. An agent with
+several live runs is reported instead of guessed; use `/subagents-steer <id> <message>` for one of
+them. Only interactive input is routed, never RPC or extension-originated input. Switch the whole
+feature off with `"mentions": false` in `subagents.json`.
+
 ## Principles
 
 1. Extensions provide and manage; they never decide. Nothing here auto-delegates, auto-selects a

@@ -2770,6 +2770,8 @@ export interface ExtensionConfig {
 	asyncWidget?: boolean;
 	/** Fork addition: include a short sanitized task preview on public `activityStatus` entries. Defaults to true. */
 	activityTaskPreview?: boolean;
+	/** Fork addition: route a prompt that starts with `@<agent|team>` to that agent or team without a model turn. Defaults to true. */
+	mentions?: boolean;
 	/** Start the under-editor async runs widget folded. Defaults to false. */
 	asyncWidgetCollapsed?: boolean;
 	/** Unfolded async runs widget layout: "adaptive" fits run details to the terminal height, "rows" shows one line per run. Defaults to "adaptive". */

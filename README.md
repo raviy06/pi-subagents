@@ -39,6 +39,7 @@ The underlying extension needs Pi 1.2.0 or newer. Background children use the ho
 | Models | `fallbacks` on an agent (frontmatter or `subagents.agentOverrides.<name>`): the first registered, in-scope candidate launches; `requestedModel`/`model`/`fallbackReason` are reported. No running child ever switches model. | [models](docs/models.md#fallbacks-fork-addition) |
 | Teams | `agentRoster.teams` in user/project settings → `subagent({ workflow: "team.<name>", args: { task } })`. Shapes `parallel`, `pipeline`, `council`. Compiled statically, validated before launch, no host authority. | [roster](docs/roster.md) |
 | `/roster` | Every agent with its model chain and provenance; teams; `agent <name>` (admin incl. *Change fallbacks*), `team <name>`, `team add\|remove`, `run <team> <task>`, `reload`. | [roster](docs/roster.md) |
+| `@mentions` | `@worker fix the tests` launches, `@scout …` steers its live run, `@review-pair …` runs the team, `@main …` talks to the model — no model turn in between; completions next to pi's `@file` picker. | [roster](docs/roster.md#mentions-at-the-prompt) |
 | For companion UIs | `activityStatus` entries with `task`/`startedAt`/`model`, `subagents:activity:changed`, `subagents:record` session entries, `manage` actions `agents.list`/`agents.get`/`models.list`; all advertised in `ping.capabilities`. | [extension API](docs/extension-api.md#activity-status-dto-fork-addition) |
 
 ## Try this first
