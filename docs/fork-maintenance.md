@@ -9,9 +9,26 @@
 - Baseline: upstream `1a80e24e` (includes commits after upstream v0.81.0). Last synced upstream commit: `35d45d98` (v0.82.1).
 - Preserve upstream authorship, license, tool/event names and configuration contracts.
 
-The fork adds read-only `activityStatus` v1 for companion UIs and test-environment
-corrections. It does not replace the runner, broaden permissions, change model
-selection, add a task store, or automatically delegate work.
+The fork's bounded delta, all additive and feature-detectable through
+`ping.capabilities`:
+
+- read-only `activityStatus` v1 for companion UIs, with the optional `task`,
+  `handle`, `startedAt` and `model` entry fields and the `activityTaskPreview` config;
+- the coalesced `subagents:activity:changed` event and `subagents:record` session
+  entries (`src/runs/shared/activity-*`, `run-record-entry.ts`, `activity-foundations.ts`);
+- the read-only agent catalogue over RPC (`manage` actions `agents.list`,
+  `agents.get`, `models.list`) with row provenance and disabled rows;
+- resolution-time model `fallbacks` (`src/runs/shared/model-candidates.ts`), the one
+  declared deviation from upstream's one-model rule, documented in [models](models.md#fallbacks-fork-addition);
+- the self-contained roster module under `src/roster/**` (planned; see
+  [the roster spec](specs/2026-10-25-agent-roster.md) and [plan](plans/2026-10-25-agent-roster.md))
+  and its single wiring block in `src/extension/index.ts`;
+- test-environment corrections.
+
+It does not replace the runner, broaden permissions, switch a running child's
+model, add a task store, or automatically delegate work. Upstream never touches
+`src/roster/` or the `activity-*` modules, so sync conflicts stay confined to
+wiring lines, `package.json` and docs.
 
 Use the scoped package prefix for direct imports, for example:
 

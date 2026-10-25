@@ -167,9 +167,11 @@ The DTO intentionally never exposes run, async, or tool IDs. Clients must ignore
 
 ### Activity status DTO (fork addition)
 
-When `ping.capabilities.activityStatus` is `{ version: 1 }`, both untargeted and
-targeted `status` replies additionally carry `data.activity`. Existing fleet and
-async snapshot contracts are unchanged.
+When `ping.capabilities.activityStatus` is `{ version: 1, fields: [...] }`, both
+untargeted and targeted `status` replies additionally carry `data.activity`.
+Existing fleet and async snapshot contracts are unchanged. `fields` lists the
+optional entry fields this build can populate (`task`, `handle`, `startedAt`,
+`model`); feature-detect on it rather than on the version.
 
 ```ts
 {
@@ -183,7 +185,10 @@ async snapshot contracts are unchanged.
     state: "running",
     activity: { tool: "read", observedAt: 123456700 },
     elapsedMs: 2000,
-    usage: { input: 100, output: 20, source: "reported-own" }
+    usage: { input: 100, output: 20, source: "reported-own" },
+    task: "Review the auth module",            // sanitized preview, <=120 chars; see activityTaskPreview
+    startedAt: 123456000,
+    model: { requested: "nope/none", effective: "openai/gpt-5-mini", fallbackReason: "unregistered" }
   }],
   incomplete: false,
   omitted: { active: 0, recent: 0, children: 0, scanTruncated: false }
@@ -215,8 +220,14 @@ start-to-snapshot time for live running/stopping states. Missing terminal timing
 stays absent. Usage contains only reported own input/output fields. It does not
 fall back to workflow/run aggregate tokens or context-window counts. Restored
 foreground history and nested summaries may not retain this split usage, so
-consumers must display unavailable rather than zero. Raw prompts, tool arguments,
-paths, transcripts, control tokens and arbitrary descriptions are not exported.
+consumers must display unavailable rather than zero. Tool arguments, paths,
+transcripts, control tokens and labels are never exported. The only prompt-derived
+text is the optional `task` preview: the child's caller-facing task/description,
+sanitized and truncated to 120 characters. It is on by default and switched off
+for the whole snapshot with `"activityTaskPreview": false` in `subagents.json`;
+with it off, no prompt-derived text reaches the snapshot. `model` carries the
+requested model, the effective launch model and, when a configured fallback was
+used, `fallbackReason` (see [models](models.md#fallbacks-fork-addition)).
 
 This projector is read-only and does no disk I/O, reconciliation or model work.
 It reads already-loaded foreground controls/history and async/fleet/nested state.
@@ -235,6 +246,59 @@ history is only what the owner still retains, not a durable ledger.
 Types are exported through `pi-subagents/shared-types`: `ActivityStatus`,
 `ActivityEntry`, and `PublicActivityState`. This fork addition does not add task
 tracking, modify delegation or grant any execution authority.
+
+### Activity change event (fork addition)
+
+When `ping.capabilities.activityEvents` is `{ version: 1, event: "subagents:activity:changed" }`,
+the owner emits that event on `pi.events` whenever a child's lifecycle changes
+(start, status, completion, process exit), coalesced to at most one emission per
+250 ms window. The payload is `{ version: 1, revision: <monotonic integer>, generatedAt }`
+and carries no run data: treat it as "call `status` now" and keep a slow poll as
+the fallback for a build without the capability. Revisions restart at 1 when the
+extension runtime is replaced.
+
+### Run records (fork addition)
+
+When `ping.capabilities.runRecords` is `{ version: 1, entryType: "subagents:record" }`,
+every top-level run that reaches a terminal state appends one session entry of
+that custom type through `pi.appendEntry`. Workflow-owned children do not get
+their own record; their workflow does. The entry is plain JSON:
+
+```ts
+{
+  version: 1,
+  runId: "run-1",
+  agent: "reviewer",
+  task?: "Review the auth module",   // <=200 chars, whitespace-collapsed
+  state: "completed" | "failed" | "partial" | "stopped" | "rejected" | "unknown",
+  startedAt?: 1700000000000, endedAt?: 1700000001000, durationMs?: 1000,
+  model?: { requested?: string, effective?: string, fallbackReason?: string },
+  usage?: { input: number, output: number },
+  workflowRunId?: string, missionId?: string
+}
+```
+
+Records are append-only history for reload-stable UIs and telemetry. A completion
+that is re-delivered (retry, resume) is recorded once per runtime; a consumer that
+rebuilds from the session file should de-duplicate on `runId`.
+
+### Agent catalogue (fork addition)
+
+When `ping.capabilities.agentsCatalog` is `{ version: 1, actions: [...] }`, the
+`manage` method accepts three read-only actions mapped onto the management tool:
+
+| RPC `manage` action | Tool action | Params |
+|---|---|---|
+| `agents.list` | `list` in capability (JSON) mode | `agentScope?: "user" \| "project" \| "both"` |
+| `agents.get` | `get` | `agent` (required), `agentScope?` |
+| `models.list` | `models` | `agentScope?` |
+
+`agents.list` returns `data.details.agentCapabilities`, the same
+`AgentCapabilitiesSnapshot` the tool returns, with two fork additions: disabled
+definitions are included as rows with `disabled: true` and `executable: false`
+(and `disabledCount` on the snapshot), and every row may carry `provenance`:
+`{ filePath?, packageName?, launcher?, override?: { scope, path, fields? }, modelSource?: { type, scope, path } }`.
+Text output of the tool is unchanged.
 
 ### Scope
 

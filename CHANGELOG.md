@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added (roster foundations)
+
+- Read-only agent catalogue over RPC: `manage` actions `agents.list`, `agents.get` and
+  `models.list`, with per-row `provenance` (file, package, launcher, applied override
+  fields, defaultModel source) and disabled definitions listed as non-executable rows.
+  Advertised as `ping.capabilities.agentsCatalog`.
+- `subagents:activity:changed` event, coalesced to one per 250 ms, so companions refresh
+  `status` on demand instead of polling (`ping.capabilities.activityEvents`).
+- `subagents:record` session entries: one plain-JSON record per top-level run completion
+  with agent, task preview, state, timing, effective model and usage
+  (`ping.capabilities.runRecords`).
+- `activityStatus` entries gain `task` (sanitized preview, gated by the new
+  `activityTaskPreview` config, default on), `handle`, `startedAt` and
+  `model { requested, effective, fallbackReason }`; `ping.capabilities.activityStatus.fields`
+  lists them. Tool arguments, paths and labels stay excluded.
+- Resolution-time model `fallbacks` in agent frontmatter and `agentOverrides.<name>`:
+  the first registered, in-scope candidate is launched and the requested/effective
+  model plus `fallbackReason` are reported everywhere the model is. No running child
+  ever switches model; the legacy `fallbackModels` key still errors and now points at
+  `fallbacks`.
+- Spec and plan for the roster module in `docs/specs/` and `docs/plans/`.
+
 ### Upstream sync
 
 - Merge upstream `nicobailon/pi-subagents` through v0.82.1 (`35d45d98`), including
