@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.81.6] - 2026-10-25
+
+### Changed
+
+- Upgrade checkout, setup-node and upload-artifact GitHub Actions to v7.
+- Preserve main-only publishing, exact-commit CI verification, protected npm
+  approval and the default archive-upload behavior. No unsafe PR checkout
+  opt-in or long-lived npm authentication token is introduced.
+
 ## [0.81.1] - 2026-10-24
 
 First release prepared for the `@raviy06/pi-subagents` fork, based on upstream
