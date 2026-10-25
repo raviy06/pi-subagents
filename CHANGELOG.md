@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-10-25
+
+This batch includes the reviewed dependency and release-workflow updates since
+published fork version 0.81.1, including the previously prepared 0.81.4 tooling changes.
+
+### Security
+
+- Update the direct Undici runtime dependency from 8.10.2 to 8.12.3. This does not
+  replace or claim to fix the host/development SDK's separate Undici copy.
+
+### Tooling
+
+- Upgrade TypeScript from 5.9.3 to 7.0.2 and remove the obsolete consumer-fixture
+  baseUrl option while retaining absolute path mappings and the API typecheck.
+- Update oxlint and @oxlint/plugins to 1.89.0 while retaining Pi SDK 1.2.0 and
+  TypeBox 1.3.27 development pins and minimum-host compatibility coverage.
+- Upgrade checkout, setup-node and upload-artifact to v7 without unsafe checkout
+  opt-ins or relaxed publication permissions.
+
 ### Fixed
 
 - Create GitHub Releases as drafts and verify tarball name, upload state, size
@@ -15,7 +34,8 @@
   grouped versioned notes in a dedicated release PR.
 - Skip publication and npm approval for main pushes without a package-version
   change; verify release intent from successful same-commit main CI before the
-  protected publisher runs. OIDC publication remains unverified end-to-end.
+  protected publisher runs. Successful main CI and protected npm approval remain
+  required; publication uses OIDC provenance and exact-source verification.
 
 ## [0.81.4] - 2026-10-25
 
