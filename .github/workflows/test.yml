@@ -290,7 +290,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Require a new version on every PR
+      - name: Validate metadata and reject version downgrades
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -301,7 +301,26 @@ jobs:
           fi
       - run: npm run build:pkg
       - run: npm run check:release -- --packed
+      - name: Validate versioned changelog content
+        env:
+          PACKAGE_NAME: '@raviy06/pi-subagents'
+        run: node scripts/github-release.mjs --validate-notes
       - run: npm pack ./dist-pkg --ignore-scripts --json
+      - name: Record this main push's release intent
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          PACKAGE_NAME: '@raviy06/pi-subagents'
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: node scripts/release-intent.mjs > "$RUNNER_TEMP/release-intent.json"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: release-intent
+          path: ${{ runner.temp }}/release-intent.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
 
   workflows:
     name: Workflow validation

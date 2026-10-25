@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Create GitHub Releases as drafts and verify tarball name, upload state, size
+  and SHA-256 digest before publication, supporting immutable releases safely.
+- Resolve actual lightweight/annotated tag commits before and after publication;
+  reject mismatches without retagging and validate exact nonempty dated notes.
+
+### Changed
+
+- Ordinary PRs no longer require version bumps or new changelog entries. Prepare
+  grouped versioned notes in a dedicated release PR.
+- Skip publication and npm approval for main pushes without a package-version
+  change; verify release intent from successful same-commit main CI before the
+  protected publisher runs. OIDC publication remains unverified end-to-end.
+
 ## [0.81.4] - 2026-10-25
 
 ### Changed

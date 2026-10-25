@@ -17,6 +17,14 @@ export function newerVersion(current,base) {
  for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i];}
  return false;
 }
+export function versionChanged(current,previous) {
+ versionParts(current);
+ if(previous===undefined)return true;
+ versionParts(previous);
+ if(current===previous)return false;
+ assert.ok(newerVersion(current,previous),`Refusing version downgrade from ${previous} to ${current}`);
+ return true;
+}
 export function validateRelease(root,{name,base,packed=false}) {
  assert.match(name,/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/,"Invalid package identity");
  const read=file=>JSON.parse(fs.readFileSync(path.join(root,file),"utf8"));
@@ -34,7 +42,7 @@ export function validateRelease(root,{name,base,packed=false}) {
  if(base){
   assert.match(base,/^[a-f0-9]{40}$/,"PR base must be an exact commit SHA");
   const previous=JSON.parse(execFileSync("git",["show",`${base}:package.json`],{cwd:root,encoding:"utf8"}));
-  assert.ok(newerVersion(source.version,previous.version),`PR must bump package version above ${previous.version}`);
+  versionChanged(source.version,previous.version);
  }
  if(packed){
   const distribution=read("dist-pkg/package.json");
@@ -54,5 +62,5 @@ export function validateRelease(root,{name,base,packed=false}) {
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
  const {values}=parseArgs({options:{name:{type:"string"},base:{type:"string"},packed:{type:"boolean"}}});
  const pkg=validateRelease(process.cwd(),values);
- console.log(`Release metadata OK: ${pkg.name}@${pkg.version}`);
+ console.log(`Package/release metadata OK: ${pkg.name}@${pkg.version}`);
 }
