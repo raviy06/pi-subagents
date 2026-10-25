@@ -6,7 +6,7 @@
 - Upstream repository: https://github.com/nicobailon/pi-subagents
 - Fork npm identity: `@raviy06/pi-subagents`
 - Initial prepared version: `0.81.1`
-- Baseline: upstream `1a80e24e` (includes commits after upstream v0.81.0).
+- Baseline: upstream `1a80e24e` (includes commits after upstream v0.81.0). Last synced upstream commit: `35d45d98` (v0.82.1).
 - Preserve upstream authorship, license, tool/event names and configuration contracts.
 
 The fork adds read-only `activityStatus` v1 for companion UIs and test-environment
