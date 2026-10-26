@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-10-26
+
+The roster becomes interactive: a tabbed `/roster` component with a Models view that flags
+unregistered and out-of-scope assignments before launch, and `@mention` routing at the prompt.
+
 ### Added (roster)
 
 - `/roster` opens a tabbed component in the TUI: Agents (model chain, thinking, provenance),
