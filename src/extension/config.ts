@@ -187,6 +187,9 @@ function validateConfig(config: Record<string, unknown>): void {
 	if (config.activityTaskPreview !== undefined && typeof config.activityTaskPreview !== "boolean") {
 		throw new Error("config.activityTaskPreview must be a boolean");
 	}
+	if (config.mentions !== undefined && typeof config.mentions !== "boolean") {
+		throw new Error("config.mentions must be a boolean");
+	}
 	if (config.asyncWidgetCollapsed !== undefined && typeof config.asyncWidgetCollapsed !== "boolean") {
 		throw new Error("config.asyncWidgetCollapsed must be a boolean");
 	}

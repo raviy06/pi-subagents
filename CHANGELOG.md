@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added (roster)
+
+- `/roster` opens a tabbed component in the TUI: Agents (model chain, thinking, provenance),
+  Models (registry models with primary/fallback assignments, scope state, and pre-launch notes for
+  unregistered or out-of-scope assignments and predicted fallbacks), Teams (add, show compiled
+  workflow, run with a task, remove) and Runs (activity snapshot with task preview and fallback
+  marker; opens the fleet inspector). ↑↓ move, Tab/←→ switch tabs, Enter open, Esc close, type to
+  filter. `/roster models|teams|runs` open a tab directly; `/roster text` keeps the plain overview.
+- `@mentions`: an interactive prompt starting with `@<agent>` launches that agent (or steers its
+  single live run) and `@<team>` runs the team, with no model turn; `@main` strips the prefix.
+  Completions for teams, agents and `@main` sit next to pi's `@file` picker. Unknown handles, paths
+  and mid-text mentions are untouched; RPC/extension input is never routed. Config `mentions`
+  (default true).
+
 ## [0.83.0] - 2026-10-25
 
 This release syncs upstream through v0.82.1 and adds the agent roster: resolution-time model

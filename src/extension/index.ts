@@ -856,6 +856,8 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		foregroundDetachShortcut,
 		workflowScriptsDisabled: disabledFeatures.features.has("workflow-scripts"),
 		rosterRuntime,
+		activityTaskPreview: config.activityTaskPreview !== false,
+		mentions: config.mentions !== false,
 	}) : { dispose: () => {} };
 
 	let visibleControlNotices = new Set<string>();

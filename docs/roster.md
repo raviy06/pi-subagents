@@ -7,6 +7,26 @@ screen; the fork only provides the data and the commands.
 
 ## What you get
 
+`/roster` opens a tabbed view in the TUI (plain text elsewhere, or with `/roster text`):
+
+```
+Roster
+[Agents]   Models   Teams   Runs                       ↑↓ move  Tab ←→ tab  Enter open  Esc close  type to filter
+→ auditor · project · anthropic/claude-opus-5-5:high · high
+  scout   · builtin · devaigateway/gpt-6-sol:high → anthropic/claude-sonnet-5:medium · user override: model, fallbacks
+  worker  · builtin · inherit · disabled
+```
+
+| Tab | Rows | Enter |
+|---|---|---|
+| **Agents** | every agent grouped by source: model chain (primary → fallbacks), thinking, provenance flags | opens the agent admin (model, fallbacks, thinking, prompt) |
+| **Models** | host registry models with the agents that use each as primary/fallback and whether it is inside an enforced `modelScope`; notes list *unregistered* assigned models, agents that *will fall back* and why, and agents on `inherit` | shows who uses the model |
+| **Teams** | `+ Add a team`, then each team with shape, chair, members and registration state | show compiled workflow · run with a task · remove |
+| **Runs** | the current session's activity snapshot: state, task preview, last tool, elapsed, `↷ model (reason)` on fallback | opens the fleet inspector |
+
+`/roster models`, `/roster teams`, `/roster runs` open a tab directly. The view only selects;
+every write happens after it closes, through the same confirmations as the commands below.
+
 | Need | Where |
 |---|---|
 | See every agent, where it came from, and what it runs on | `/roster` |
@@ -90,6 +110,25 @@ settings and re-registers.
 A team result is plain JSON: `parallel` returns `{ team, shape, members, results[{ member, runId, output }] }`,
 `pipeline` returns `{ team, shape, stages[], output }`, `council` returns
 `{ team, shape, chair, members, passes, rounds[], memo, memoRunId, memberRunIds }`.
+
+## `@mentions` at the prompt
+
+A prompt that **starts** with `@<agent>` or `@<team>` goes straight to that agent or team, with
+no model turn in between:
+
+```
+@review-pair review the diff on this branch        → launches team.review-pair in the background
+@worker implement the fix with tests               → launches the worker agent
+@scout also check the RPC path                     → steers scout's single live run
+@main continue the plan                            → strips the prefix and talks to the main model
+```
+
+Typing `@` at the start of the prompt completes teams first, then agents (live ones marked), then
+`@main`, alongside pi's normal `@file` picker. Anything else is left for the model: an unknown
+handle, a path such as `@src/index.ts`, or a mention in the middle of a sentence. An agent with
+several live runs is reported instead of guessed; use `/subagents-steer <id> <message>` for one of
+them. Only interactive input is routed, never RPC or extension-originated input. Switch the whole
+feature off with `"mentions": false` in `subagents.json`.
 
 ## Principles
 
