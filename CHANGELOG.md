@@ -4,23 +4,6 @@
 
 ### Changed
 
-
-
-### Fixed
-
-- The `[prompt redacted]` placeholder no longer appears as a task preview in the RPC activity
-  snapshot or in `subagents:record` entries. It is written into status files and artifacts in
-  place of prompt text, so companions rendering `task` showed the literal marker next to the
-  agent name. Display paths now treat it as "no task" (`displayTask` in `shared/utils.ts`);
-  what is persisted is unchanged.
-
-## [0.85.0] - 2026-10-27
-
-Syncs upstream through v0.83.0 and makes the fork's activity-changed event the one
-subscription a companion needs. See [Upstream 0.83.0](#upstream-0830---2026-10-25) for the
-inherited fixes.
-### Changed
-
 - `subagents:activity:changed` now also fires on upstream's `subagent:jobs-changed` hint (#3070),
   so it covers chain/parallel step moves and progress updates as well as lifecycle events. Both
   names stay advertised in `ping.events` / `ping.capabilities`; upstream's hint keeps its `{ version: 1 }`
@@ -33,6 +16,11 @@ inherited fixes.
 
 ### Fixed
 
+- The `[prompt redacted]` placeholder no longer appears as a task preview in the RPC activity
+  snapshot or in `subagents:record` entries. It is written into status files and artifacts in
+  place of prompt text, so companions rendering `task` showed the literal marker next to the
+  agent name. Display paths now treat it as "no task" (`displayTask` in `shared/utils.ts`);
+  what is persisted is unchanged.
 - `activityTaskPreview: false` is honoured on the RPC `status` reply. Both `status` paths built the
   activity snapshot without the option, so a companion could still receive prompt-derived task
   previews with the setting off; `/roster` already respected it.
