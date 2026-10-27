@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-10-27
+
+Syncs upstream through v0.83.0 and makes the fork's activity-changed event the one
+subscription a companion needs. See [Upstream 0.83.0](#upstream-0830---2026-10-25) for the
+inherited fixes.
+
+### Changed
+
+- `subagents:activity:changed` now also fires on upstream's `subagent:jobs-changed` hint (#3070),
+  so it covers chain/parallel step moves and progress updates as well as lifecycle events. Both
+  names stay advertised in `ping.events` / `ping.capabilities`; upstream's hint keeps its `{ version: 1 }`
+  payload and the fork's keeps `revision` and `generatedAt`.
+- A lost ```` ```js workflow ```` block is now recovered by resending the source as
+  `options: { script: "..." }`, as upstream does, instead of the fork's earlier "write it to a file"
+  advice. The bundled skill says the same.
+- The `fallbacks` frontmatter field is listed in a `Fork fields` subsection of the agents guide so
+  upstream's frontmatter table stays within the guide section cap.
+
+### Fixed
+
+- `activityTaskPreview: false` is honoured on the RPC `status` reply. Both `status` paths built the
+  activity snapshot without the option, so a companion could still receive prompt-derived task
+  previews with the setting off; `/roster` already respected it.
+- Upstream's new rejection of unknown `agentOverrides` fields (#3064) accepts the fork's `fallbacks`.
+
 ## [0.84.0] - 2026-10-26
 
 The roster becomes interactive: a tabbed `/roster` component with a Models view that flags
