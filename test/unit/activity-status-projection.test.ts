@@ -102,13 +102,13 @@ describe("public activity snapshot", () => {
 		}
 		assert.equal(result.incomplete, true);
 	});
-	it("does not export prompts, raw arguments, paths or unsafe labels", () => {
+	it("does not export raw arguments, paths or control characters; the preview is the label when one exists", () => {
 		const s = state(), job = asyncJob();
 		Object.assign(job.steps[0], { description: "SECRET prompt", currentToolArgs: "SECRET args", currentPath: "/SECRET/path", label: "SECRET label", currentTool: "read\u001b]0;SECRET\u0007", agent: "worker\u202e" });
 		s.asyncJobs.set(job.asyncId, job);
 		const json = JSON.stringify(buildActivityStatus(s, "S1", 500));
-		assert.ok(!json.includes("SECRET args") && !json.includes("SECRET label") && !json.includes("\u202e") && !json.includes("/SECRET"));
-		assert.ok(json.includes("SECRET prompt"), "the task preview is on by default");
+		assert.ok(!json.includes("SECRET args") && !json.includes("\u202e") && !json.includes("/SECRET"));
+		assert.ok(json.includes("SECRET label") && !json.includes("SECRET prompt"), "the author's label is the preview and stands in for the prompt");
 		const withoutTask = JSON.stringify(buildActivityStatus(s, "S1", 500, { taskPreview: false }));
 		assert.ok(!withoutTask.includes("SECRET"), "taskPreview: false keeps every prompt-derived text out");
 	});
@@ -119,6 +119,18 @@ describe("public activity snapshot", () => {
 		assert.ok(result.entries.length <= 64); assert.ok(result.incomplete);
 		assert.ok(result.omitted.active > 0); assert.ok(result.omitted.scanTruncated);
 		assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 32768);
+	});
+
+	it("prefers the step label, then the launch-time session name excerpt, over redacted task text", () => {
+		const s = state();
+		s.asyncJobs.set("a", { asyncId: "a", sessionId: "S1", status: "running", mode: "parallel", startedAt: 100, agents: ["scout", "scout", "worker"], steps: [
+			{ index: 0, agent: "scout", status: "running", startedAt: 100, description: PROMPT_REDACTED, label: "Map auth flow", sessionName: "scout: Review both jvm based library and ruby gem" },
+			{ index: 1, agent: "scout", status: "running", startedAt: 100, description: PROMPT_REDACTED, sessionName: "scout: Review both jvm based library and ruby gem. We need" },
+			{ index: 2, agent: "worker", status: "running", startedAt: 100, description: PROMPT_REDACTED, sessionName: "worker" },
+		] } as any);
+		const tasks = buildActivityStatus(s, "S1", 500).entries.map((entry) => entry.task);
+		assert.deepEqual(tasks, ["Map auth flow", "Review both jvm based library and ruby gem. We need", undefined]);
+		assert.ok(JSON.stringify(buildActivityStatus(s, "S1", 500, { taskPreview: false })).includes("Map auth") === false, "taskPreview: false still hides every preview");
 	});
 
 	it("never exposes the prompt-redaction placeholder as a task preview", () => {

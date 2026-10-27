@@ -236,11 +236,15 @@ stays absent. Usage contains only reported own input/output fields. It does not
 fall back to workflow/run aggregate tokens or context-window counts. Restored
 foreground history and nested summaries may not retain this split usage, so
 consumers must display unavailable rather than zero. Tool arguments, paths,
-transcripts, control tokens and labels are never exported. The only prompt-derived
-text is the optional `task` preview: the child's caller-facing task/description,
-sanitized and truncated to 120 characters. It is on by default and switched off
-for the whole snapshot with `"activityTaskPreview": false` in `subagents.json`;
-with it off, no prompt-derived text reaches the snapshot. `model` carries the
+transcripts and control tokens are never exported. The only caller-derived text
+is the optional `task` preview, sanitized and truncated to 120 characters. It is
+the most deliberate description available: a workflow step's author-written
+`label`, else the launch-time session-name excerpt (the first ~60 characters of
+the real task), else the task/description text. Persisted status carries
+`[prompt redacted]` in place of the prompt; that marker is never shown as a
+task. The preview is on by default and switched off for the whole snapshot with
+`"activityTaskPreview": false` in `subagents.json`; with it off, no
+caller-derived text reaches the snapshot. `model` carries the
 requested model, the effective launch model and, when a configured fallback was
 used, `fallbackReason` (see [models](models.md#fallbacks-fork-addition)).
 

@@ -4,6 +4,11 @@
 
 ### Changed
 
+- Activity status rows now describe the job instead of staying blank when the stored task is
+  redacted: the preview is the workflow step's `label` when present, else the launch-time
+  session-name excerpt (first ~60 characters of the real task), else the task text. Labels
+  were previously withheld from the snapshot; they are author-written and gated by the same
+  `activityTaskPreview` switch, so a companion can show `scout · Map auth flow · Working`.
 - `subagents:activity:changed` now also fires on upstream's `subagent:jobs-changed` hint (#3070),
   so it covers chain/parallel step moves and progress updates as well as lifecycle events. Both
   names stay advertised in `ping.events` / `ping.capabilities`; upstream's hint keeps its `{ version: 1 }`
