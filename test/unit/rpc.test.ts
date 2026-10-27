@@ -151,6 +151,21 @@ describe("subagent extension RPC bridge", () => {
 		bridge.dispose();
 	});
 
+	it("honours activityTaskPreview=false on both status paths", async () => {
+		const makeState = () => ({ currentSessionId: "S1", statusProjectionSessionId: "S1", foregroundControls: new Map([["private-run", { runId: "private-run", sessionId: "S1", mode: "single", currentAgent: "worker", currentIndex: 0, startedAt: 100, updatedAt: 200, description: "secret prompt text" }]]), asyncJobs: new Map() }) as any;
+		const execute = async () => ({ content: [{ type: "text", text: "status" }], details: { mode: "management", results: [] } }) as any;
+		for (const [preview, expected] of [[false, undefined], [true, "secret prompt text"], [undefined, "secret prompt text"]] as const) {
+			const events = new FakeEvents();
+			const bridge = registerSubagentRpcBridge({ events, state: makeState(), now: () => 500, getContext: () => ctx("S1", "S1"), execute, activityTaskPreview: preview });
+			for (const params of [undefined, { id: "private-run" }]) {
+				const reply = await request(events, `preview-${String(preview)}-${params ? "targeted" : "memory"}`, "status", params);
+				assert.ok(reply.success);
+				assert.equal((reply as any).data.activity.entries[0].task, expected);
+			}
+			bridge.dispose();
+		}
+	});
+
 	it("replies to malformed request ids on the safe unknown channel", async () => {
 		const events = new FakeEvents();
 		const bridge = registerSubagentRpcBridge({
