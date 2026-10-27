@@ -7,6 +7,7 @@ import {
 	buildRunRecord,
 	runRecordStateFromStatus,
 } from "../../src/runs/shared/run-record-entry.ts";
+import { PROMPT_REDACTED } from "../../src/shared/utils.ts";
 
 describe("run-record-entry constants", () => {
 	it("exposes the entry type, version, and task limit", () => {
@@ -66,6 +67,11 @@ describe("buildRunRecord", () => {
 			workflowRunId: "wf-9",
 			missionId: "m-2",
 		});
+	});
+
+	it("drops the prompt-redaction placeholder instead of recording it as a task", () => {
+		assert.equal("task" in buildRunRecord({ runId: "r", task: PROMPT_REDACTED }), false);
+		assert.equal("task" in buildRunRecord({ runId: "r", task: `  ${PROMPT_REDACTED} ` }), false);
 	});
 
 	it("truncates long tasks to exactly the limit ending with an ellipsis", () => {
