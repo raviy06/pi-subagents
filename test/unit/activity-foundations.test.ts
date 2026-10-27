@@ -8,6 +8,7 @@ import {
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_CHILD_STATUS_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
+	SUBAGENT_JOBS_CHANGED_EVENT,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	type SubagentState,
 } from "../../src/shared/types.ts";
@@ -67,6 +68,17 @@ describe("registerActivityFoundations", () => {
 		h.events.emit(SUBAGENT_CHILD_STATUS_EVENT, { id: "y" });
 		h.flush();
 		assert.equal(h.events.emitted.filter((e) => e.event === ACTIVITY_CHANGED_EVENT).length, 1);
+	});
+
+	it("folds the upstream jobs-changed hint into the coalesced activity-changed event", () => {
+		const h = harness();
+		h.events.emit(SUBAGENT_JOBS_CHANGED_EVENT, { version: 1 });
+		h.events.emit(SUBAGENT_JOBS_CHANGED_EVENT, { version: 1 });
+		h.flush();
+		const changed = h.events.emitted.filter((e) => e.event === ACTIVITY_CHANGED_EVENT);
+		assert.equal(changed.length, 1);
+		assert.deepEqual(changed[0]!.data, { version: 1, revision: 1, generatedAt: 1_000 });
+		h.registration.dispose();
 	});
 
 	it("appends one durable record for a top-level async completion using job facts", () => {
