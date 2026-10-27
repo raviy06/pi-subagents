@@ -12,6 +12,7 @@ import {
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_CHILD_STATUS_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
+	SUBAGENT_JOBS_CHANGED_EVENT,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	type SubagentState,
 } from "../../shared/types.ts";
@@ -42,6 +43,8 @@ const LIFECYCLE_EVENTS = [
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
+	// Upstream's widget-refresh hint (#3070): covers chain/parallel step moves and progress updates that no lifecycle event reports.
+	SUBAGENT_JOBS_CHANGED_EVENT,
 ] as const;
 
 /** Bounded memory for completion de-duplication across re-deliveries. */

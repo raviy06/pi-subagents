@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-10-27
+
+Syncs upstream through v0.83.0 and makes the fork's activity-changed event the one
+subscription a companion needs. See [Upstream 0.83.0](#upstream-0830---2026-10-25) for the
+inherited fixes.
+
+### Changed
+
+- `subagents:activity:changed` now also fires on upstream's `subagent:jobs-changed` hint (#3070),
+  so it covers chain/parallel step moves and progress updates as well as lifecycle events. Both
+  names stay advertised in `ping.events` / `ping.capabilities`; upstream's hint keeps its `{ version: 1 }`
+  payload and the fork's keeps `revision` and `generatedAt`.
+- A lost ```` ```js workflow ```` block is now recovered by resending the source as
+  `options: { script: "..." }`, as upstream does, instead of the fork's earlier "write it to a file"
+  advice. The bundled skill says the same.
+- The `fallbacks` frontmatter field is listed in a `Fork fields` subsection of the agents guide so
+  upstream's frontmatter table stays within the guide section cap.
+
+### Fixed
+
+- `activityTaskPreview: false` is honoured on the RPC `status` reply. Both `status` paths built the
+  activity snapshot without the option, so a companion could still receive prompt-derived task
+  previews with the setting off; `/roster` already respected it.
+- Upstream's new rejection of unknown `agentOverrides` fields (#3064) accepts the fork's `fallbacks`.
+
 ## [0.84.0] - 2026-10-26
 
 The roster becomes interactive: a tabbed `/roster` component with a Models view that flags
@@ -142,7 +167,35 @@ changes below were already present in that baseline.
   Retire the legacy shared-directory installer; activation uses Pi's package
   manager and must replace, not duplicate, the upstream extension.
 
+## Upstream [0.83.0] - 2026-10-25
+
+### Highlights
+
+- When an extension or tool search changes the system prompt or tools during a session, subagent results no longer make every later turn miss the prompt cache, so those turns are cheaper and faster again. A child that runs its own subagents keeps its cache too.
+- Subagents that finished their work always report it: background runs no longer end as "exited with code 0 before writing a result", and foreground calls no longer hang when the child stops after its final reply.
+- Children placed on another machine (a Rex tab, Rex over SSH, or a Herdr pane) launch instead of being refused, and workflows no longer crash on Windows standalone Pi builds.
+- Extensions and editors that show subagent activity can refresh on a new event instead of polling, and `bg_wait` now waits for background jobs that other extensions report, such as surf-cli's.
+- A typo in an agent override in settings, such as `modle` or a thinking level like `hgih`, now fails with a "Did you mean" hint instead of being ignored.
+
 ### Added
+
+- Extensions and editor integrations that show background subagent activity no longer need to poll for changes. A new `subagent:jobs-changed` event tells them to read `status` again whenever a background run starts, moves to its next step, reports progress, or finishes, including chain and parallel step changes that no event reported before. The RPC `ping` reply now lists it, along with the existing `subagent:async-started` event, and [extension-api.md](docs/extension-api.md#refresh-a-host-view-without-polling) shows how to use them. Thanks to [@raviy06](https://github.com/raviy06) for the proposal. (#3068)
+
+### Fixed
+
+- When an extension or tool search changed the system prompt or tools during a session, the first request of every new turn after the first subagent notice missed the prompt cache, so most of the context was sent uncached again each turn. A child that had called `subagent` missed it on every later request. On models where Pi adds those changes further down the conversation instead of rewriting the start of the prompt (Anthropic and OpenAI models, among others), the way pi-subagents marked its notices and removed parent-only subagent history made Pi move them all back into the start of the prompt, which then changed every turn. Both now leave those changes where they are. Thanks to [@adameq](https://github.com/adameq) for the report. (#3058, #3063)
+- Background subagents that finished their work no longer end as "exited with code 0 before writing a result". When a child stopped after its final reply without reporting that it had settled, or when one of its extensions hung on shutdown, the background runner process exited with the result still unwritten. It now ends the child after its final reply, waits for any compaction that runs after that reply, and waits at most 5 seconds for shutdown handlers. A foreground subagent whose child stops the same way now returns its reply too, instead of the call never returning. Thanks to [@perriea](https://github.com/perriea). (#3051)
+- Background jobs that other extensions report to `bg_wait`, such as surf-cli's or pi-agent-wait's, are now waited for in saved sessions. Before, `bg_wait` and the wait at the end of a `pi -p` run matched a job only when the extension named the session by its file path, so a job named by the session id was ignored and they returned while it was still running. Both forms are now accepted. Thanks to [@cad0p](https://github.com/cad0p) for the report. (#3071)
+- With features turned off in `disabledFeatures`, every `guide` topic now starts with a notice listing what is disabled, and every section with a one-line pointer to that list, not only the `tool-reference` topic. Before, an agent reading the workflow guide with `workflow-scripts` disabled was taught `workflow: true` and `args`, and its call was rejected. With workflow scripts disabled, the notice also says to use the top-level `tasks` or `chain` fields instead. Thanks to [@jefftheai](https://github.com/jefftheai) for the report. (#3057)
+- When text written after a tool call reaches Pi only as a summary, as happens through the Claude Agent SDK used by pi-claude-bridge, a lost ```` ```js workflow ```` block no longer means writing the script to a file first. The error now says to resend the source as `options: { script: "..." }`, which runs it directly. (#3056)
+- A fresh child placed on a machine (a Rex tab, a Rex machine over SSH, or a Herdr pane) launches. Every such launch was refused with "does not support fork, resume, or revival" because each child is handed a local session file path, which placement read as a request to restore a transcript. Builtin agents with a tools list, such as `scout`, can be placed too: their required tools are checked against the tools the remote Pi activates. Forked context is still refused on a machine, and so is a resume that would place the child again, since a placed child's transcript stays on that machine. Thanks to [@honbolau](https://github.com/honbolau) for the report and [@isjiajia01](https://github.com/isjiajia01) for tracing it. (#3043)
+- A misspelled field in a `subagents.agentOverrides` or `agentOverridesByProvider` entry, such as `modle`, was ignored; loading now fails with the settings file, the field, and the nearest known name (`Did you mean 'model'?`). An override's `thinking` must now be a known level (`off` through `max`) or `false`; a typo such as `hgih` used to be appended to the child's model id. Creating or updating an agent with the `subagent` tool now rejects such a level too, instead of writing it into the agent file. Thanks to [@isjiajia01](https://github.com/isjiajia01) for the report. (#3050)
+- Creating an agent with `thinking: off`, or updating one to ` off ` with spaces, now saves `thinking: off` in the agent file. Before, the line was left out, so the agent used the default thinking level instead of none.
+- `extensionBindings` now reach foreground children. Before, an extension in a foreground child saw no `PI_SUBAGENT_EXTENSION_BINDINGS`, or the bindings of the background child that launched it. A foreground child now gets its own bindings while its extensions load and run `session_start`, and the parent's environment is restored afterwards. Thanks to [@crisboarna](https://github.com/crisboarna). (#3049)
+- Workflows no longer crash on Windows standalone Pi builds (Bun 1.3.14) once Bun's transpiler cache is warm. The workflow worker now starts from a file in the package. Thanks to [@temoc](https://github.com/temoc). (#3055)
+- `subagent` calls from providers that send nested tool values as strings, such as `options: { capabilities: "true", timeoutMs: "120000" }`, no longer fail with "must be boolean" or "must be integer". Values inside `options` now get the same type conversion Pi already applies to top-level parameters. Thanks to [@5hiri](https://github.com/5hiri) for the report and [@isjiajia01](https://github.com/isjiajia01) for narrowing it down. (#3048)
+- Child transcripts in `/subagents-fleet`, `subagent` status and inspect replies show each tool call's input (`[tool: bash {"command":"ls"}]`) instead of only the tool name. Thanks to [@kunkun9527](https://github.com/kunkun9527) for the report. (#3053)
+
 ## Upstream [0.82.1] - 2026-10-24
 
 ### Highlights

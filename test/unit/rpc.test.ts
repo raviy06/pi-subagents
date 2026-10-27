@@ -91,14 +91,11 @@ describe("subagent extension RPC bridge", () => {
 		assert.equal(reply.success, true);
 		assert.equal(reply.method, "ping");
 		assert.equal((reply as { data: { version?: number } }).data.version, SUBAGENT_RPC_PROTOCOL_VERSION);
-		assert.equal(
-			(reply as { data: { events?: { asyncComplete?: string } } }).data.events?.asyncComplete,
-			"subagent:async-complete",
-		);
-		assert.equal(
-			(reply as { data: { events?: { childStatus?: string } } }).data.events?.childStatus,
-			SUBAGENT_CHILD_STATUS_EVENT,
-		);
+		const advertised = (reply as { data: { events?: { asyncComplete?: string; childStatus?: string; jobsChanged?: string; asyncStarted?: string } } }).data.events;
+		assert.equal(advertised?.asyncComplete, "subagent:async-complete");
+		assert.equal(advertised?.childStatus, SUBAGENT_CHILD_STATUS_EVENT);
+		assert.equal(advertised?.jobsChanged, "subagent:jobs-changed");
+		assert.equal(advertised?.asyncStarted, "subagent:async-started");
 		assert.equal(
 			(reply as { data: { capabilities?: { nonRecoveringSteer?: boolean } } }).data.capabilities?.nonRecoveringSteer,
 			true,
@@ -149,6 +146,21 @@ describe("subagent extension RPC bridge", () => {
 		}
 		assert.equal(executions, 1);
 		bridge.dispose();
+	});
+
+	it("honours activityTaskPreview=false on both status paths", async () => {
+		const makeState = () => ({ currentSessionId: "S1", statusProjectionSessionId: "S1", foregroundControls: new Map([["private-run", { runId: "private-run", sessionId: "S1", mode: "single", currentAgent: "worker", currentIndex: 0, startedAt: 100, updatedAt: 200, description: "secret prompt text" }]]), asyncJobs: new Map() }) as any;
+		const execute = async () => ({ content: [{ type: "text", text: "status" }], details: { mode: "management", results: [] } }) as any;
+		for (const [preview, expected] of [[false, undefined], [true, "secret prompt text"], [undefined, "secret prompt text"]] as const) {
+			const events = new FakeEvents();
+			const bridge = registerSubagentRpcBridge({ events, state: makeState(), now: () => 500, getContext: () => ctx("S1", "S1"), execute, activityTaskPreview: preview });
+			for (const params of [undefined, { id: "private-run" }]) {
+				const reply = await request(events, `preview-${String(preview)}-${params ? "targeted" : "memory"}`, "status", params);
+				assert.ok(reply.success);
+				assert.equal((reply as any).data.activity.entries[0].task, expected);
+			}
+			bridge.dispose();
+		}
 	});
 
 	it("replies to malformed request ids on the safe unknown channel", async () => {

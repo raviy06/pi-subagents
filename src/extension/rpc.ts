@@ -15,7 +15,9 @@ import {
 	type TokenUsage,
 	DIRS,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
+	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_CHILD_STATUS_EVENT,
+	SUBAGENT_JOBS_CHANGED_EVENT,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 	type SubagentChildStatusEvent,
@@ -494,8 +496,10 @@ function pingData(ctx: ExtensionContext | null, options: RegisterSubagentRpcBrid
 			request: SUBAGENT_RPC_REQUEST_EVENT,
 			replyPrefix: SUBAGENT_RPC_REPLY_EVENT_PREFIX,
 			asyncComplete: SUBAGENT_ASYNC_COMPLETE_EVENT,
+			asyncStarted: SUBAGENT_ASYNC_STARTED_EVENT,
 			childStatus: SUBAGENT_CHILD_STATUS_EVENT,
 			processTerminal: SUBAGENT_PROCESS_TERMINAL_EVENT,
+			jobsChanged: SUBAGENT_JOBS_CHANGED_EVENT,
 		},
 		session: sessionData(ctx),
 	};
@@ -800,7 +804,7 @@ async function handleRequest(
 					details: { mode: "management", results: [] },
 					fleet,
 					asyncSnapshot,
-					activity: buildActivityStatus(options.state, sessionId, options.now?.()),
+					activity: buildActivityStatus(options.state, sessionId, options.now?.(), { taskPreview: options.activityTaskPreview !== false }),
 				};
 			}
 		}
@@ -820,7 +824,7 @@ async function handleRequest(
 				sessionId,
 			),
 			asyncSnapshot: buildAsyncStatusSnapshotForState(options.state, sessionId),
-			activity: buildActivityStatus(options.state, sessionId, options.now?.()),
+			activity: buildActivityStatus(options.state, sessionId, options.now?.(), { taskPreview: options.activityTaskPreview !== false }),
 		};
 	}
 	if (request.method === "steer") {
