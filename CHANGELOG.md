@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-10-27
+
+Syncs upstream through v0.83.0, makes the fork's activity-changed event the one subscription a
+companion needs, and gives status rows a real description of each child's job. See
+[Upstream 0.83.0](#upstream-0830---2026-10-25) for the inherited fixes.
+
 ### Changed
 
 - Activity status rows now describe the job instead of staying blank when the stored task is
