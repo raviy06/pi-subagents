@@ -800,7 +800,7 @@ async function handleRequest(
 					details: { mode: "management", results: [] },
 					fleet,
 					asyncSnapshot,
-					activity: buildActivityStatus(options.state, sessionId, options.now?.()),
+					activity: buildActivityStatus(options.state, sessionId, options.now?.(), { taskPreview: options.activityTaskPreview !== false }),
 				};
 			}
 		}
@@ -820,7 +820,7 @@ async function handleRequest(
 				sessionId,
 			),
 			asyncSnapshot: buildAsyncStatusSnapshotForState(options.state, sessionId),
-			activity: buildActivityStatus(options.state, sessionId, options.now?.()),
+			activity: buildActivityStatus(options.state, sessionId, options.now?.(), { taskPreview: options.activityTaskPreview !== false }),
 		};
 	}
 	if (request.method === "steer") {
