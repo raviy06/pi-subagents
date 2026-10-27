@@ -80,17 +80,17 @@ Downgrades remain prohibited. Verify a release version is not already published.
 2. Configure npm trusted publishing for `raviy06/pi-subagents`, workflow
    `release.yml`, environment `npm`. Establish the scoped package/initial
    publication using npm's supported account flow if required.
-3. Configure required reviewers for the fork's GitHub `npm` environment.
-   Merely naming an environment does not create an approval policy.
+3. Restrict the fork's GitHub `npm` environment to the `main` branch. No reviewer
+   gate: a version-changing push to main publishes without manual approval.
 4. Verify full tests and packed smoke, and merge the release PR into fork main.
 5. Main push CI records the push's before/after package versions in a small
    `release-intent` artifact, covering multi-commit/rebase merges. After successful
    main CI, a read-only Publish job verifies the run identity and recomputes that
-   intent against Git objects. Unchanged versions skip publishing **before** any
-   npm approval is requested. Only a version-changing push queues deployment.
+   intent against Git objects. Unchanged versions skip publishing entirely.
+   Only a version-changing push runs the publisher, and it runs unattended.
    Manual dispatch uses the same successful CI run and saved intent; missing or
    invalid artifacts fail closed, and ordinary commits cannot force a release.
-   Do not advance main while a release awaits approval: superseded release
+   Do not advance main while a release is publishing: superseded release
    commits still require a fresh release PR. The workflow
    checks out that commit, revalidates/builds, treats only npm HTTP 404 as absent,
    and skips republishing existing versions. Superseded main commits and new

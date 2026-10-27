@@ -45,6 +45,10 @@ export interface ActivityFacts {
 	/** Caller-facing task/goal text; `description` is the field name on run controls and job steps. */
 	description?: string;
 	task?: string;
+	/** Author-written workflow step label; the best short description of the job when present. */
+	label?: string;
+	/** `agent: <task excerpt>` derived at launch from the real prompt; survives where `task` is redacted. */
+	sessionName?: string;
 	handle?: string;
 	/** Effective launch model (job steps carry it as `model`). */
 	model?: string;
@@ -77,6 +81,22 @@ export function activityState(facts: ActivityFacts): PublicActivityState {
 export function activeEntry(entry: ActivityEntry): boolean {
 	return ["running", "queued", "stopping", "unknown"].includes(entry.state);
 }
+/**
+ * The short text a status row shows for a child. Persisted status carries `[prompt redacted]` as
+ * the task, so the sources are tried from most to least deliberate: the author's step `label`,
+ * the launch-time `sessionName` excerpt with its `agent: ` prefix removed, then the task text.
+ */
+export function taskPreviewText(facts: Pick<ActivityFacts, "label" | "sessionName" | "task" | "description">, agent?: string): string | undefined {
+	const label = displayTask(facts.label);
+	if (label) return label;
+	const name = displayTask(facts.sessionName)?.trim();
+	if (name) {
+		const prefix = agent ? `${agent}:` : undefined;
+		const excerpt = prefix && name.startsWith(prefix) ? name.slice(prefix.length).trim() : name;
+		if (excerpt && excerpt !== agent) return excerpt;
+	}
+	return displayTask(facts.task) ?? displayTask(facts.description);
+}
 export interface ActivityEntryOptions {
 	/** Include a sanitized ≤120-char task preview. Off keeps prompt text out of the public snapshot entirely. */
 	taskPreview?: boolean;
@@ -94,7 +114,7 @@ export function activityEntry(key: string, facts: ActivityFacts, now: number, pa
 		const end = validCount(facts.endedAt) ? facts.endedAt : ["running", "stopping"].includes(state) ? now : undefined;
 		if (end !== undefined && end >= facts.startedAt) elapsedMs = end - facts.startedAt;
 	}
-	const task = options.taskPreview === false ? undefined : safeText(displayTask(facts.task) ?? displayTask(facts.description), 120);
+	const task = options.taskPreview === false ? undefined : safeText(taskPreviewText(facts, agent), 120);
 	const handle = safeText(facts.handle, 64);
 	const effective = safeText(facts.model, 128);
 	const requested = safeText(facts.requestedModel, 128);

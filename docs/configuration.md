@@ -347,7 +347,7 @@ Controls the under-editor widget for active background runs. It defaults to `tru
 { "activityTaskPreview": true }
 ```
 
-Controls whether public `activityStatus` entries (read by companion UIs such as `pi-agent-activity`) carry a sanitized, at most 120-character preview of each child's task. Defaults to `true`. Set it to `false` to keep every prompt-derived text out of the snapshot; tool arguments, paths and labels are never exported either way. See [extension API](extension-api.md#activity-status-dto-fork-addition).
+Controls whether public `activityStatus` entries (read by companion UIs such as `pi-agent-activity`) carry a sanitized, at most 120-character preview of each child's job: the workflow step `label` when the author wrote one, else an excerpt of the task. Defaults to `true`. Set it to `false` to keep every caller-derived text out of the snapshot; tool arguments and paths are never exported either way. Give workflow steps a short `label` ("Map auth flow") for the clearest status rows. See [extension API](extension-api.md#activity-status-dto-fork-addition).
 
 ## `mentions` (fork addition)
 
