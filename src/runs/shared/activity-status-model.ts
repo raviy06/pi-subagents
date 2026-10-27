@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { sanitizeDisplayText, truncateDisplayText } from "../../shared/display-text.ts";
+import { displayTask } from "../../shared/utils.ts";
 
 export const ACTIVITY_STATUS_VERSION = 1;
 export type PublicActivityState = "queued" | "running" | "paused" | "stopping" | "completed" | "failed" | "stopped" | "unknown";
@@ -93,7 +94,7 @@ export function activityEntry(key: string, facts: ActivityFacts, now: number, pa
 		const end = validCount(facts.endedAt) ? facts.endedAt : ["running", "stopping"].includes(state) ? now : undefined;
 		if (end !== undefined && end >= facts.startedAt) elapsedMs = end - facts.startedAt;
 	}
-	const task = options.taskPreview === false ? undefined : safeText(facts.task ?? facts.description, 120);
+	const task = options.taskPreview === false ? undefined : safeText(displayTask(facts.task) ?? displayTask(facts.description), 120);
 	const handle = safeText(facts.handle, 64);
 	const effective = safeText(facts.model, 128);
 	const requested = safeText(facts.requestedModel, 128);

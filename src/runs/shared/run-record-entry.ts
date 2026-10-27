@@ -1,3 +1,4 @@
+import { displayTask } from "../../shared/utils.ts";
 export const RUN_RECORD_ENTRY_TYPE = "subagents:record" as const;
 export const RUN_RECORD_VERSION = 1 as const;
 export const RUN_RECORD_TASK_LIMIT = 200;
@@ -110,8 +111,9 @@ function finiteNumber(value: unknown): number | undefined {
 }
 
 function normalizeTask(task: string | undefined): string | undefined {
-	if (task === undefined) return undefined;
-	const collapsed = task.replace(/\s+/g, " ").trim();
+	const shown = displayTask(task);
+	if (shown === undefined) return undefined;
+	const collapsed = shown.replace(/\s+/g, " ").trim();
 	if (collapsed.length === 0) return undefined;
 	if (collapsed.length <= RUN_RECORD_TASK_LIMIT) return collapsed;
 	return collapsed.slice(0, RUN_RECORD_TASK_LIMIT - TASK_ELLIPSIS.length) + TASK_ELLIPSIS;

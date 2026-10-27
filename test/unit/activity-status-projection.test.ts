@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { PROMPT_REDACTED } from "../../src/shared/utils.ts";
 import { buildActivityStatus } from "../../src/runs/shared/activity-status-projection.ts";
 import type { SubagentState } from "../../src/shared/types.ts";
 
@@ -118,6 +119,14 @@ describe("public activity snapshot", () => {
 		assert.ok(result.entries.length <= 64); assert.ok(result.incomplete);
 		assert.ok(result.omitted.active > 0); assert.ok(result.omitted.scanTruncated);
 		assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 32768);
+	});
+
+	it("never exposes the prompt-redaction placeholder as a task preview", () => {
+		const s = state();
+		s.asyncJobs.set("a", { asyncId: "a", sessionId: "S1", status: "running", mode: "single", startedAt: 100,
+			steps: [{ index: 0, agent: "reviewer", status: "running", startedAt: 100, description: PROMPT_REDACTED }] } as any);
+		s.foregroundControls.set("f", { ...foreground("f"), description: `  ${PROMPT_REDACTED}  ` });
+		for (const entry of buildActivityStatus(s, "S1", 500).entries) assert.equal("task" in entry, false, entry.agent);
 	});
 
 	it("carries task, startedAt and model facts on entries (fork additive fields)", () => {
