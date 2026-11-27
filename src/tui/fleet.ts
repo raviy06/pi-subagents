@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type MarkdownTheme, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { fleetContains, fleetLayout, type FleetLayout } from "./fleet-layout.ts";
 import { FleetViewport } from "./fleet-viewport.ts";
 import { snapshotExternalRuns, type ExternalRun } from "../api/external-runs.ts";
@@ -19,9 +19,11 @@ import { stopAsyncRun } from "../runs/foreground/async-stop-action.ts";
 import { resolveWorkflowForegroundSteeringTarget, steerWorkflowForegroundTarget } from "../runs/foreground/workflow-foreground-steering.ts";
 import { contextModeBadge, contextModeLabel } from "../runs/shared/context-mode.ts";
 import { foregroundChildStateLabel } from "../runs/foreground/foreground-history.ts";
-import { FLEET_STATUS_WIDGET_KEY, reportFleetWarning } from "./fleet-status.ts";
+import { FLEET_STATUS_WIDGET_KEY } from "./fleet-status.ts";
+import { reportSessionWarning } from "../shared/session-warnings.ts";
 import { stepTaskSummary } from "./render.ts";
-import { readFleetTranscript, renderFleetTranscript, type FleetTranscript } from "./fleet-transcript.ts";
+import { renderFleetTranscript } from "./fleet-transcript.ts";
+import { readFleetTranscript, type FleetTranscript } from "../shared/fleet-transcript-reader.ts";
 import { runningTone } from "./running-tone.ts";
 import { childThinkingLevel, type ThinkingLevel } from "../shared/model-info.ts";
 import { handleInspectorAction } from "../inspectors/actions.ts";
@@ -80,6 +82,7 @@ type Theme = ExtensionContext["ui"]["theme"];
 type FleetTui = {
 	terminal?: { rows: number };
 	requestRender(): void;
+	getFocusedComponent?(): Component | null;
 };
 type AsyncStep = AsyncRunSummary["steps"][number];
 
@@ -284,7 +287,8 @@ export function collectFleetSnapshot(
 				entryLimit: MAX_FLEET_HISTORY_CANDIDATES,
 				resultsDir: options.resultsDir ?? DIRS.results,
 				reconcile: false,
-				onCorruptStatus: (warning) => reportFleetWarning(state, warning),
+				includeNested: false,
+				onCorruptStatus: (warning) => reportSessionWarning(state, warning),
 			}).filter((run) => !trackedIds.has(run.id));
 			runs = [...trackedRuns, ...history];
 		} else {
@@ -299,7 +303,7 @@ export function collectFleetSnapshot(
 
 	if (state.currentSessionId) {
 		try {
-			for (const run of snapshotExternalRuns(state.currentSessionId, { ignoreMalformed: true, onMalformedRecord: (message) => reportFleetWarning(state, `Removed ${message}`) })) {
+			for (const run of snapshotExternalRuns(state.currentSessionId, { ignoreMalformed: true, onMalformedRecord: (message) => reportSessionWarning(state, `Removed ${message}`) })) {
 				items.push({
 					key: `external:${run.id}`,
 					kind: "external",
@@ -814,7 +818,7 @@ function transcriptFingerprint(filePath: string): string {
 	}
 }
 
-export class SubagentFleetComponent implements Component {
+export class SubagentFleetComponent implements Component, Focusable {
 	private snapshot: FleetSnapshot = { items: [] };
 	private selected = 0;
 	private selectedKey: string | undefined;
@@ -831,6 +835,10 @@ export class SubagentFleetComponent implements Component {
 	private actionBusy = false;
 	private transcriptCache: FleetTranscriptCache | undefined;
 	private disposed = false;
+	// Undefined until a TUI first focuses the overlay, so a fleet rendered outside one still draws.
+	private hasFocus: boolean | undefined;
+	// The component focused when the fleet opened (the overlay's preFocus).
+	private readonly openedOver: Component | null | undefined;
 	private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 	private readonly refreshMs: number;
 	private readonly tui: FleetTui;
@@ -849,6 +857,7 @@ export class SubagentFleetComponent implements Component {
 		options: FleetViewOptions = {},
 	) {
 		this.tui = tui;
+		this.openedOver = tui.getFocusedComponent?.();
 		this.viewport = new FleetViewport(() => this.tui.requestRender());
 		this.theme = theme;
 		this.markdownTheme = options.markdownTheme ?? getMarkdownTheme();
@@ -1039,6 +1048,16 @@ export class SubagentFleetComponent implements Component {
 
 	private scrollDetail(delta: number): void {
 		this.viewport.scroll.scrollBy(delta);
+	}
+
+	get focused(): boolean {
+		return this.hasFocus === true;
+	}
+
+	set focused(value: boolean) {
+		if (value === this.hasFocus) return;
+		this.hasFocus = value;
+		this.tui.requestRender();
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
@@ -1374,6 +1393,14 @@ export class SubagentFleetComponent implements Component {
 	}
 
 	render(width: number): string[] {
+		// An inline dialog that took focus (a permission prompt, select, confirm) sits under this overlay and
+		// would be covered while it owns the keys. Hiding the overlay through its handle would cancel the
+		// TUI's focus restore, so draw nothing until the TUI gives focus back. Focus moving to the component the
+		// fleet opened over (a fullscreen click on the editor) shows no dialog, and the next key returns to the fleet.
+		if (this.hasFocus === false && this.tui.getFocusedComponent?.() !== this.openedOver) {
+			this.renderedLayout = undefined;
+			return [];
+		}
 		const layout = fleetLayout(width, this.tui.terminal?.rows ?? 32, this.selected, this.snapshot.items);
 		this.renderedLayout = layout;
 		if (!layout) return [truncateToWidth("Subagent fleet needs at least 36 columns. Esc closes.", width)];

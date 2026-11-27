@@ -73,12 +73,48 @@ function captureCommand(command: string, cwd: string): Promise<string> {
 }
 
 function writeCaptureOrca(dir: string): string {
-	return writeNodeCommand(dir, "orca", "require('fs').writeFileSync(process.env.ORCA_TEST_CAPTURE, JSON.stringify(process.argv.slice(2)))");
+	return writeNodeCommand(dir, "orca", `
+const fs = require('fs');
+const capture = process.env.ORCA_TEST_CAPTURE;
+const temporary = capture + '.' + process.pid + '.tmp';
+fs.writeFileSync(temporary, JSON.stringify(process.argv.slice(2)));
+fs.renameSync(temporary, capture);
+`);
 }
 
 function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
+
+test("capture Orca publishes complete JSON during a slow write", { skip: process.platform === "win32" }, async () => {
+	const dir = tempDir();
+	const capture = path.join(dir, "capture.json");
+	const fakeOrca = writeCaptureOrca(dir);
+	const preload = path.join(dir, "slow-write.cjs");
+	fs.writeFileSync(preload, `
+const fs = require('fs');
+const write = fs.writeFileSync;
+fs.writeFileSync = (file, data, ...options) => {
+  write(file, '', ...options);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+  return write(file, data, ...options);
+};
+`);
+	const child = spawn(process.execPath, ["--require", preload, fakeOrca, "terminal", "create"], {
+		env: { ...process.env, ORCA_TEST_CAPTURE: capture },
+		stdio: "ignore",
+	});
+	const exited = new Promise<void>((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", (code) => code === 0 ? resolve() : reject(new Error(`Capture exited ${code}`)));
+	});
+	try {
+		await waitForFile(capture);
+		assert.deepEqual(JSON.parse(fs.readFileSync(capture, "utf-8")), ["terminal", "create"]);
+	} finally {
+		await exited;
+	}
+});
 
 test("Orca progress tabs are disabled on Windows", { skip: process.platform === "win32" ? undefined : "Windows-only platform boundary" }, () => {
 	const dir = tempDir();

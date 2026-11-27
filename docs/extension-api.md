@@ -152,7 +152,7 @@ A host that shows background subagent activity (an editor panel, a footer, a sta
 
 `subagent:jobs-changed` carries only `{ version: 1 }`. It fires whenever the parent's background job view changes: a run starts, moves to another step (no other event reports a chain or parallel run's step changes), reports new activity (a tool, a turn, tokens, or output), finishes, or is cleared from the widget. While a child streams output this can be about once per second per run. Starts and finishes fire right away; step and activity changes fire when the parent next reads the run's status file, which on macOS is a check every 5 seconds. It fires only in sessions with a UI, which covers interactive and RPC mode; print mode (`pi -p`) and SDK embeddings without a UI do not get it. It fires even when the async widget is turned off.
 
-Foreground children are not background jobs. Their progress arrives as updates to the parent's `subagent` tool call (Pi's `tool_execution_update` events), with the `details.results[]` rows described above.
+Foreground children are not background jobs. Their progress arrives as updates to the parent's `subagent` tool call (Pi's `tool_execution_update` events), with the `details.results[]` rows described above. Each `details.progress[]` row names the child's `sessionFile` from launch when the child has one, so a host can follow the child's transcript while it runs instead of waiting for the final result; the file may appear only once the child writes its first entry.
 
 To rebuild what ran in a session after a reload, read the records the session file already holds: the `subagent` tool result's `details.results[]` for foreground runs and the `subagent-notify` message's `details.runs[]` for background runs (see [Host session lifetime and completion wakes](#host-session-lifetime-and-completion-wakes)). The `cost` method returns per-child rows built from the same records.
 
@@ -410,6 +410,8 @@ const result = await resolveSubagentLaunchContract({
   cwd: ctx.cwd,
   sessionRoot: "/tmp/my-extension-preflight-session-root",
   availableModels: ctx.modelRegistry.getAvailable(),
+  // Every provider Pi knows, so `anthropic/...` never resolves to another provider's copy.
+  knownProviders: () => ctx.modelRegistry.getAll().map((model) => model.provider),
 });
 
 if (!result.ok) {
@@ -446,6 +448,21 @@ Boundaries:
 - It is side-effect-free for launch state: it does not create child sessions, temp prompt files, structured-output runtimes, tool-diagnostic files, or run artifacts.
 - Some host-owned facts, such as exact fork snapshots, nested async roots, and live model registries, can only be proven by the Pi host; those appear as `host_required` diagnostics instead of silently pretending to be exact.
 - Preflight reads the extension config, so `defaultSubagentContext: "fresh"` or `"fork"` affects omitted context in the same way as execution. Explicit `context` still wins.
+
+### Requiring a launcher
+
+An extension that approved one agent definition for one [launcher](agents.md#sandboxing-background-children-with-a-launcher) can make the launch depend on that approval. Read `contract.agent.definitionDigest` from preflight, then pass it with the launcher name in the call, for example by adding it to the `subagent` tool call's input in your `tool_call` handler:
+
+```ts
+event.input.options = { ...event.input.options, requireLauncher: { name: "net", definitionDigest } };
+```
+
+pi-subagents checks the requirement after every `tool_call` handler has run, against the agent and launcher it is about to start, and again when it spawns the runner. The launch is refused if the agent has no launcher, uses another launcher, or has a different definition digest (for example because the agent file changed, or a project agent now shadows it). It never falls back to running without the launcher, and a refusal starts nothing. The runner records the checked digest.
+
+- Only a top-level single-agent call (`agent` + `task`) accepts it, and it runs in the background because launcher agents always do. `tasks`, `chain`, workflows, workflow children (`runs.run`), actions and `resume` are refused.
+- The requirement travels in the call. Another extension's `tool_call` handler that runs after yours can remove it, and pi-subagents cannot tell. Register your handler so it runs last, or check the run's `status.json` (`launcher.name`) afterwards.
+- Releases without this option reject `options.requireLauncher` as an unknown option, so an older install fails the call instead of ignoring it.
+- The run's recovery record keeps the requirement, and `resume` checks it again: it is refused if the agent is gone, names another launcher, or has a different definition digest, and attaching a chain to the run is refused.
 
 ## Structured delegation API
 
@@ -564,6 +581,8 @@ const restriction = registerSubagentCapabilityCeiling({
 // restriction.update(...) replaces this provider's policy atomically.
 // restriction.dispose() removes only this provider's registration.
 ```
+
+Register with **`ctx.sessionManager.getSessionId()`**; a ceiling registered by session file path does not apply.
 
 Semantics:
 
@@ -726,7 +745,7 @@ When Pi runs inside [Herdr](https://herdr.dev), pi-subagents automatically repor
 - The bridge is enabled only when Herdr supplies `HERDR_ENV=1` and `HERDR_PANE_ID`; outside Herdr it registers no listeners or timers.
 - It restores current-session active runs after `/reload` or `/resume`, refreshes metadata while work is active, and clears it on completion or shutdown.
 - The bridge emits `herdr:busy` while async work remains and never raises `herdr:blocked`, because a child's attention request goes to the parent agent, not the user. Herdr's Pi integration does not consume `herdr:busy` yet, so the pane's dot follows the parent's own turn and the metadata label shows the active work.
-- The owning Pi session is the only publisher for its own pane metadata. When an active workflow has an explicit bounded `label`, the newest active label appears in the summary and compact `title-suffix`; overlapping completion restores the previous active label. Raw task and goal prompts never enter Herdr metadata. Without a label, one active run uses its agent name and two or more use the active-run count. Attention adds `⚠`, and the suffix is cleared when active work reaches zero.
+- The owning Pi session is the only publisher for its own pane metadata. When an active workflow has an explicit bounded `label`, the newest active label appears in the summary; overlapping completion restores the previous active label. Raw task and goal prompts never enter Herdr metadata. The compact `title-suffix` is always `⏳N`, where N is the number of active subagents, so it stays short in narrow sidebar rows. Attention adds `⚠`, and the suffix is cleared when active work reaches zero.
 
 To show the reported label in the expanded Agent sidebar, include `state_text` or `$summary` in its row layout:
 
