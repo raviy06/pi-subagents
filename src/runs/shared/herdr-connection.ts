@@ -29,8 +29,18 @@ type SshTarget = Pick<HerdrMachineReference, "target">;
 export function decodeHerdrJsonLine(line: Buffer): unknown { try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line)) as unknown; } catch { throw new Error("Herdr emitted malformed JSON or UTF-8."); } }
 
 export function shellQuoteRemote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
-export function remoteShellCommand(script: string, args: string[] = []): string { return `sh -c ${shellQuoteRemote(`PATH="${HERDR_REMOTE_PATH}"; export PATH; ${script}`)} sh${args.map((arg) => ` ${shellQuoteRemote(arg)}`).join("")}`; }
+export function shellScriptCommand(script: string, args: string[] = []): string { return `sh -c ${shellQuoteRemote(script)} sh${args.map((arg) => ` ${shellQuoteRemote(arg)}`).join("")}`; }
+export function remoteShellCommand(script: string, args: string[] = []): string { return shellScriptCommand(`PATH="${HERDR_REMOTE_PATH}"; export PATH; ${script}`, args); }
 function canonicalHerdrSession(session: string | null | undefined): string | null { return session && session !== "default" ? session : null; }
+/**
+ * Points herdr at a recorded local server only: the calling process's own pane selectors (a background runner started from
+ * another pane) never choose it. A named session's server reports its name only when HERDR_SESSION says it (herdr 0.9.5).
+ */
+export function herdrLocalEnv(socket: string, session: string | null | undefined, source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const { HERDR_SESSION: _session, HERDR_CLIENT_SOCKET_PATH: _client, HERDR_PANE_ID: _pane, HERDR_ENV: _env, HERDR_SOCKET_PATH: _socket, ...env } = source;
+	const selected = canonicalHerdrSession(session);
+	return { ...env, HERDR_SOCKET_PATH: socket, ...(selected ? { HERDR_SESSION: selected } : {}) };
+}
 function sshEnvCommand(session: string | undefined, command: string): string { const selected = canonicalHerdrSession(session), assignment = selected ? ` HERDR_SESSION=${shellQuoteRemote(selected)}` : ""; return `/usr/bin/env -u HERDR_SOCKET_PATH -u HERDR_SESSION${assignment} ${remoteShellCommand(command)}`; }
 
 export function runHerdrRemoteCommand(machine: SshTarget, command: string, options: { sshBin?: string; env?: NodeJS.ProcessEnv; timeout?: number; maxBuffer?: number } = {}) { return spawnSync(options.sshBin ?? "ssh", [...herdrSshArgs(options.env), machine.target, command], { encoding: "utf8", env: hardenedSshEnv(options.env), timeout: options.timeout ?? 15_000, maxBuffer: options.maxBuffer ?? MAX_DISCOVERY_BYTES, windowsHide: true }); }
@@ -129,7 +139,8 @@ function openSshSockets(machine: SshTarget, options: { sshBin?: string; env?: No
 	const forward = async (remotePath: string, name: string) => {
 		if (!path.posix.isAbsolute(remotePath)) throw new Error("Remote socket path must be absolute.");
 		const local = path.join(dir, `${name}.sock`);
-		const child = spawn(options.sshBin ?? "ssh", [...herdrSshArgs(options.env), "-N", "-o", "StreamLocalBindUnlink=yes", "-L", `${local}:${remotePath}`, machine.target], { env: hardenedSshEnv(options.env), stdio: "ignore", windowsHide: true }); children.add(child);
+		// Some sshd policies drop sessions that run no command (`ssh -N`). The remote command reads the open stdin pipe, so it ends on EOF when the connection closes; a non-tty `sleep` would outlive the forwarder.
+		const child = spawn(options.sshBin ?? "ssh", [...herdrSshArgs(options.env), "-o", "StreamLocalBindUnlink=yes", "-L", `${local}:${remotePath}`, machine.target, remoteShellCommand("exec cat >/dev/null")], { env: hardenedSshEnv(options.env), stdio: ["pipe", "ignore", "ignore"], windowsHide: true }); children.add(child);
 		const stop = async () => { await terminateChild(child); children.delete(child); try { fs.rmSync(local, { force: true }); } catch {} };
 		try { await waitForSocket(local, child); } catch (error) { await stop(); throw error; }
 		return { socketPath: local, close: stop };

@@ -1,4 +1,5 @@
 import { normalizeWorktreeBaseRef } from "../runs/shared/worktree.ts";
+import { REQUIRE_LAUNCHER_SHAPE_ERROR } from "../runs/shared/runner-launcher.ts";
 
 export interface PublicSubagentExecutionParams {
 	action?: unknown;
@@ -46,6 +47,7 @@ export interface PublicSubagentExecutionParams {
 	suppressRoutineResultIntercom?: unknown;
 	runFanoutBudget?: unknown;
 	runFanoutAdmitted?: unknown;
+	requireLauncher?: unknown;
 }
 
 export type PublicSubagentExecutionMode = "workflow" | "management";
@@ -128,8 +130,10 @@ export function normalizePublicSubagentExecution<T extends PublicSubagentExecuti
 		if (capacityOverrideError) return { ok: false, error: capacityOverrideError, mode: params.action === undefined ? "workflow" : "management" };
 		const validatesSpawnBudget = typeof params.action === "string" && params.action.trim() === "validate"
 			&& params.globalConcurrencyLimit === undefined && params.maxSubagentSpawnsPerRun !== undefined;
-		if ((params.action !== undefined && !validatesSpawnBudget) || !hasRawScript) {
-			return { ok: false, error: `Workflow capacity overrides are only supported on top-level ${RAW_SCRIPT_FORMS} calls; validate accepts maxSubagentSpawnsPerRun for static budget checks.`, mode: params.action === undefined ? "workflow" : "management" };
+		// A named workflow runs as a generated script, so it takes the same concurrency cap (#3320).
+		const namedConcurrencyLimit = hasNamedWorkflow && params.maxSubagentSpawnsPerRun === undefined;
+		if ((params.action !== undefined && !validatesSpawnBudget) || (!hasRawScript && !namedConcurrencyLimit)) {
+			return { ok: false, error: `Workflow capacity overrides are only supported on top-level ${RAW_SCRIPT_FORMS} calls; named workflow calls accept globalConcurrencyLimit only; validate accepts maxSubagentSpawnsPerRun for static budget checks.`, mode: params.action === undefined ? "workflow" : "management" };
 		}
 	}
 	if (params.preflight !== undefined && !hasWorkflowInput) {
@@ -161,6 +165,9 @@ export function normalizePublicSubagentExecution<T extends PublicSubagentExecuti
 		return { ok: false, error: "action must be a non-empty management/control action, or omit action and use workflow.", mode: "management" };
 	}
 	const normalizedAction = typeof action === "string" ? action.trim() : undefined;
+	if (params.requireLauncher !== undefined && (normalizedAction !== undefined || hasWorkflowInput || params.tasks !== undefined || params.chain !== undefined || params.parallel !== undefined || params.resume !== undefined)) {
+		return { ok: false, error: REQUIRE_LAUNCHER_SHAPE_ERROR, mode: normalizedAction !== undefined ? "management" : "workflow" };
+	}
 	if (params.baseRef !== undefined && normalizedAction !== undefined && normalizedAction !== "resume" && normalizedAction !== "schedule.create") {
 		return { ok: false, error: "baseRef is only supported for child execution, resume, and schedule.create.", mode: "management" };
 	}

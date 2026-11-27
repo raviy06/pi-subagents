@@ -19,11 +19,19 @@ describe("reply workflow block", () => {
 		assert.deepEqual(readReplyWorkflowScript(branch({ type: "text", text }, call("call-1")), "call-1"), { script: "return 2;" });
 	});
 
+	it("does not count a sibling call that passes options.script alongside workflow: true (#3320)", () => {
+		const manager = branch({ type: "text", text: "```js workflow\nreturn 1;\n```" }, call("call-1"), call("call-2", { workflow: true, options: { script: "return 2;" } }));
+		assert.deepEqual(readReplyWorkflowScript(manager, "call-1"), { script: "return 1;" });
+		// options.script: "null" is an unset placeholder, so that sibling reads the reply block too.
+		const placeholder = readReplyWorkflowScript(branch({ type: "text", text: "```js workflow\nreturn 1;\n```" }, call("call-1"), call("call-2", { workflow: true, options: { script: "null" } })), "call-1");
+		assert.ok("error" in placeholder && /2 subagent calls with workflow: true; a reply can carry only one/.test(placeholder.error), JSON.stringify(placeholder));
+	});
+
 	it("fails instead of guessing when the block or its owning call is ambiguous or missing", () => {
 		const block = "```js workflow\nreturn 1;\n```";
 		for (const [manager, pattern] of [
 			[branch({ type: "text", text: "no block" }, call("call-1")), /exact line "```js workflow".*found 0\. If the block is in your reply: .*options: \{ script: "\.\.\." \} in place of workflow: true/],
-			[branch({ type: "thinking", thinking: "```js workflow\nreturn 1;\n```" }, call("call-1")), /no text in the session.*never reached it\. .*options: \{ script: "\.\.\." \} in place of workflow: true/],
+			[branch({ type: "thinking", thinking: "```js workflow\nreturn 1;\n```" }, call("call-1")), /no text in the session, so no ```js workflow block reached it\. .*options: \{ script: "\.\.\." \} in place of workflow: true/],
 			[branch({ type: "text", text: "```js\na();\n```\n```js\nb();\n```" }, call("call-1")), /found 0\. This reply has 2 untagged js blocks/],
 			[branch({ type: "text", text: `${block}\n${block}` }, call("call-1")), /found 2/],
 			[branch({ type: "text", text: "```js workflow\nreturn 1;" }, call("call-1")), /not closed/],
@@ -33,5 +41,17 @@ describe("reply workflow block", () => {
 			const result = readReplyWorkflowScript(manager, "call-1");
 			assert.ok("error" in result && pattern.test(result.error), JSON.stringify(result));
 		}
+	});
+
+	it("names an earlier message of the turn that holds the block, without running it", () => {
+		const message = (role: string, ...content: unknown[]) => ({ type: "message", message: { role, content } });
+		const turn = { getBranch: () => [
+			message("user", { type: "text", text: "go" }),
+			message("assistant", { type: "text", text: "```js workflow\nreturn 1;\n```" }, { type: "toolCall", id: "write-1", name: "write", arguments: {} }),
+			message("toolResult", { type: "text", text: "ok" }),
+			message("assistant", call("call-1")),
+		] } as never;
+		const result = readReplyWorkflowScript(turn, "call-1");
+		assert.ok("error" in result && /A ```js block is in an earlier message of this turn, but workflow: true reads only the message that issues the call\. Pass that script's source as options: \{ script: "\.\.\." \}/.test(result.error), JSON.stringify(result));
 	});
 });

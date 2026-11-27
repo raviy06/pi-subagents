@@ -9,17 +9,22 @@ import type { AsyncStatus } from "../../shared/types.ts";
 import { readMissionBinding, type MissionLaunchBinding } from "../../missions/lifecycle.ts";
 import { MissionNotFoundError, readMission } from "../../missions/store.ts";
 import type { MissionStatus } from "../../missions/types.ts";
-import { REVIVAL_ORIGIN_FILE } from "../../workflows/workflow-revival.ts";
+import { projectWorkflowKeyRevival, REVIVAL_LINK_FILE, REVIVAL_ORIGIN_FILE } from "../../workflows/workflow-revival.ts";
 import { ACTIVE_RUN_INDEX_DIR } from "./active-run-index.ts";
 import { encodeIndexSegment } from "./index-segment.ts";
 import { reconcileAsyncRun } from "./stale-run-reconciler.ts";
+import { recoveryDescriptorPath, runLaunchDir } from "../shared/run-launch-folder.ts";
 
-export const ASYNC_RETENTION_DAYS = 30;
+const ASYNC_RETENTION_DAYS = 30;
 export const ASYNC_RETENTION_BATCH_SIZE = 100;
 export const ASYNC_RETENTION_DELAY_MS = 60_000;
-export const ASYNC_RETENTION_TOMBSTONE_GRACE_MS = 24 * 60 * 60 * 1000;
+const ASYNC_RETENTION_TOMBSTONE_GRACE_MS = 24 * 60 * 60 * 1000;
+// A run or result whose session file still exists can be resumed, so it is kept this long
+// instead of ASYNC_RETENTION_DAYS. Session files outlive run dirs, so without a ceiling it is kept forever.
+export const RESUMABLE_RETENTION_DAYS = 90;
 
 const RETENTION_MS = ASYNC_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const RESUMABLE_RETENTION_MS = RESUMABLE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const LOCK_NAME = ".async-retention.lock";
 const CURSOR_NAME = ".async-retention-cursor.json";
 const LOG_NAME = "async-retention-maintenance.jsonl";
@@ -196,7 +201,8 @@ function hasNestedReferences(status: AsyncStatus): boolean {
 function hasResumableContract(runDir: string, status: AsyncStatus): boolean {
 	const statusSessionFiles = [status.sessionFile, ...(status.steps ?? []).map((step) => step.sessionFile)];
 	if (statusSessionFiles.some(existingRegularFile)) return true;
-	const descriptorPath = path.join(runDir, "recovery-descriptor.json");
+	// runDir may be a tombstone; the launch folder is keyed by the run id.
+	const descriptorPath = recoveryDescriptorPath(path.dirname(runDir), status.runId);
 	if (!fs.existsSync(descriptorPath)) return false;
 	const descriptor = readJson(descriptorPath);
 	if (!descriptor) return true;
@@ -232,6 +238,49 @@ function missionReferenceBlocksReclaim(runDir: string, resultsDir: string, runId
 	} catch (error) {
 		return !(error instanceof MissionNotFoundError);
 	}
+}
+
+type ReferenceInput = { asyncDirRoot: string; cutoff: number; resumableCutoff: number; protectedRunIds: ReadonlySet<string>; waitRunIds: ReadonlySet<string> };
+
+// A run is kept by its own state: live, waited on, recent, resumable, or unreadable. A missing run keeps nothing.
+function runKept(input: ReferenceInput, runId: string): boolean {
+	const runDir = path.join(input.asyncDirRoot, runId);
+	if (!fs.existsSync(runDir)) return false;
+	const status = readStatus(runDir);
+	if (status?.runId !== runId || !TERMINAL_STATES.has(status.state)) return true;
+	if (input.protectedRunIds.has(runId) || input.waitRunIds.has(runId) || activeMarkerExists(input.asyncDirRoot, runId)) return true;
+	const timestamp = statusTimestamp(status, runDir);
+	return timestamp === undefined || timestamp > input.cutoff || (timestamp > input.resumableCutoff && hasResumableContract(runDir, status));
+}
+
+// A workflow, its children and their revivals are reclaimed together: each is kept while any of them is.
+function workflowTreeKept(input: ReferenceInput, workflow: AsyncStatus): boolean {
+	return (workflow.steps ?? []).some((step) => {
+		if (!step.runId || !validRunId(step.runId)) return false;
+		const revived = step.workflowKey ? projectWorkflowKeyRevival(input.asyncDirRoot, workflow.runId, step.workflowKey, step.runId)?.revivedRunIds ?? [] : [];
+		const chain = [step.runId, ...revived];
+		// The chain ends at a link it could not follow when that link file is still there.
+		return fs.existsSync(path.join(input.asyncDirRoot, chain.at(-1)!, REVIVAL_LINK_FILE)) || chain.some((runId) => runKept(input, runId));
+	});
+}
+
+// Only the workflow checks its tree; its children wait for its folder to go, then are judged on their own.
+// An invalid workflow id names no folder to wait for, so it keeps them too.
+function workflowKeepsChildren(asyncDirRoot: string, workflowRunId: string): boolean {
+	return !validRunId(workflowRunId) || fs.existsSync(path.join(asyncDirRoot, workflowRunId));
+}
+
+function workflowReferenceBlocksReclaim(input: ReferenceInput, runDir: string, status: AsyncStatus): boolean {
+	if (status.mode === "workflow" && workflowTreeKept(input, status)) return true;
+	let workflowRunId = status.parentWorkflowRunId;
+	// A revived workflow child is a link in its key's revival chain and belongs to that workflow.
+	if (fs.existsSync(path.join(runDir, REVIVAL_ORIGIN_FILE))) {
+		const origin = readJson(path.join(runDir, REVIVAL_ORIGIN_FILE));
+		if (typeof origin?.workflowRunId !== "string") return true;
+		workflowRunId = origin.workflowRunId;
+	}
+	if (workflowRunId === undefined) return status.workflowKey !== undefined;
+	return workflowKeepsChildren(input.asyncDirRoot, workflowRunId);
 }
 
 function runTombstoneMarkerPath(maintenanceRoot: string, runId: string): string {
@@ -306,6 +355,7 @@ function runSkipReason(input: {
 	asyncDirRoot: string;
 	resultsDir: string;
 	cutoff: number;
+	resumableCutoff: number;
 	protectedRunIds: ReadonlySet<string>;
 	waitRunIds: ReadonlySet<string>;
 }): string | undefined {
@@ -317,14 +367,13 @@ function runSkipReason(input: {
 	if (input.waitRunIds.has(status.runId)) return "wait-reference";
 	if (activeMarkerExists(input.asyncDirRoot, status.runId)) return "active-index";
 	if (!TERMINAL_STATES.has(status.state)) return "non-terminal";
-	if (status.mode === "workflow" || status.parentWorkflowRunId || status.workflowKey) return "workflow-reference";
-	// A revived workflow child is a link in its key's revival chain; deleting it would cut off later revivals.
-	if (fs.existsSync(path.join(runDir, REVIVAL_ORIGIN_FILE))) return "workflow-reference";
+	if (workflowReferenceBlocksReclaim(input, runDir, status)) return "workflow-reference";
 	if (hasNestedReferences(status)) return "nested-reference";
 	if (missionReferenceBlocksReclaim(runDir, input.resultsDir, status.runId)) return "mission-reference";
 	if (hasUnresolvedRunHandoff(runDir, status)) return "handoff-reference";
-	if (hasResumableContract(runDir, status)) return "resumable";
 	const timestamp = statusTimestamp(status, runDir);
+	// Unknown ages stay protected.
+	if (hasResumableContract(runDir, status) && (timestamp === undefined || timestamp > input.resumableCutoff)) return "resumable";
 	if (timestamp === undefined) return "unknown-age";
 	if (timestamp > input.cutoff) return "recent";
 	return undefined;
@@ -370,9 +419,14 @@ async function computeProcessStartIdentity(pid: number): Promise<string | undefi
 	if (process.platform === "win32") {
 		// PowerShell takes ~0.5 s to start; a synchronous spawn would freeze the TUI.
 		const started = await new Promise<string>((resolve) => {
-			execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CreationDate`], { encoding: "utf-8", windowsHide: true, timeout: 5_000 }, (error, stdout) => {
-				resolve(error ? "" : stdout.trim());
-			});
+			// Node throws instead of calling back when the executable cannot be spawned at all (spawn UNKNOWN when policy blocks PowerShell).
+			try {
+				execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CreationDate`], { encoding: "utf-8", windowsHide: true, timeout: 5_000 }, (error, stdout) => {
+					resolve(error ? "" : stdout.trim());
+				});
+			} catch {
+				resolve("");
+			}
 		});
 		return started ? `win:${started}` : undefined;
 	}
@@ -504,12 +558,6 @@ function hasUnresolvedResultHandoff(data: Record<string, unknown>): boolean {
 	return typeof manifestPath !== "string" || !manifestPath || unresolvedHandoff(manifestPath);
 }
 
-function completionMode(data: Record<string, unknown>): unknown {
-	return data.completion && typeof data.completion === "object" && !Array.isArray(data.completion)
-		? (data.completion as Record<string, unknown>).mode
-		: undefined;
-}
-
 function resultSkipReason(input: {
 	candidate: ResultCandidate;
 	data: Record<string, unknown> | undefined;
@@ -517,6 +565,7 @@ function resultSkipReason(input: {
 	resultsDir: string;
 	maintenanceRoot: string;
 	cutoff: number;
+	resumableCutoff: number;
 	protectedRunIds: ReadonlySet<string>;
 	waitRunIds: ReadonlySet<string>;
 }): string | undefined {
@@ -529,12 +578,13 @@ function resultSkipReason(input: {
 	if (activeMarkerExists(input.asyncDirRoot, runId)) return "active-index";
 	if (fs.existsSync(path.join(input.asyncDirRoot, runId))) return "run-present";
 	if (missionObserverIndexExists(input.resultsDir, runId)) return "mission-reference";
-	if (input.data.mode === "workflow" || completionMode(input.data) === "workflow" || typeof input.data.parentWorkflowRunId === "string" || typeof input.data.workflowKey === "string") return "workflow-reference";
+	// The run dir is gone here, so a workflow's own result is an orphan; a child's result waits for its workflow's folder.
+	if (typeof input.data.parentWorkflowRunId === "string" ? workflowKeepsChildren(input.asyncDirRoot, input.data.parentWorkflowRunId) : typeof input.data.workflowKey === "string") return "workflow-reference";
 	if (hasUnresolvedResultHandoff(input.data)) return "handoff-reference";
-	if (resultHasResumableSession(input.data)) return "resumable";
+	const timestamp = resultTimestamp(input.data, input.candidate.path);
+	if (resultHasResumableSession(input.data) && (timestamp === undefined || timestamp > input.resumableCutoff)) return "resumable";
 	if (input.candidate.kind === "archive" && fs.existsSync(path.join(input.resultsDir, "completion-replay", `${encodeURIComponent(runId)}.json`))) return "replay-reference";
 	if (!terminalResult(input.data) && input.candidate.kind !== "replay" && input.candidate.kind !== "archive" && input.candidate.kind !== "tombstone") return "non-terminal-result";
-	const timestamp = resultTimestamp(input.data, input.candidate.path);
 	if (timestamp === undefined) return "unknown-age";
 	if (timestamp > input.cutoff) return "recent";
 	return undefined;
@@ -737,6 +787,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 		if (markCancelled()) return finish();
 		const protectedRunIds = new Set(options.protectedRunIds ?? []);
 		const cutoff = currentTime - retentionMs;
+		const resumableCutoff = currentTime - RESUMABLE_RETENTION_MS;
 		const cursor = readCursor(maintenanceRoot);
 		const runBudget = Math.ceil(batchSize / 2);
 		const resultBudget = batchSize - runBudget;
@@ -807,7 +858,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 					status = reconciliation.status ?? undefined;
 					if (reconciliation.repaired) result.repairedRuns += 1;
 				}
-				const initialReason = runSkipReason({ runDir, status, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, protectedRunIds, waitRunIds: waitReferences.runIds });
+				const initialReason = runSkipReason({ runDir, status, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, resumableCutoff, protectedRunIds, waitRunIds: waitReferences.runIds });
 				if (initialReason) {
 					increment(result.skipped, initialReason);
 					continue;
@@ -822,13 +873,14 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 						continue;
 					}
 					const freshWaitReferences = parseWaitRunIds(waitSubscriptionsDir);
-					const finalReason = freshWaitReferences.safe ? runSkipReason({ runDir, status, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
+					const finalReason = freshWaitReferences.safe ? runSkipReason({ runDir, status, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, resumableCutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
 					if (finalReason) {
 						increment(result.skipped, `recheck-${finalReason}`);
 						continue;
 					}
 					mutationStateChanged = true;
 					fs.rmSync(runDir, { recursive: true });
+					fs.rmSync(runLaunchDir(options.asyncDirRoot, status!.runId), { recursive: true, force: true });
 					removeRunTombstoneMarker(maintenanceRoot, status!.runId);
 					result.reapedTombstones += 1;
 					deletedIds.push(`run-tombstone:${status!.runId}`);
@@ -846,7 +898,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 				}
 				const recheckStatus = readStatus(tombstone);
 				const freshWaitReferences = parseWaitRunIds(waitSubscriptionsDir);
-				const recheckReason = freshWaitReferences.safe ? runSkipReason({ runDir: tombstone, status: recheckStatus, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
+				const recheckReason = freshWaitReferences.safe ? runSkipReason({ runDir: tombstone, status: recheckStatus, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, cutoff, resumableCutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
 				if (recheckReason) {
 					if (!fs.existsSync(runDir)) {
 						fs.renameSync(tombstone, runDir);
@@ -858,6 +910,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 					continue;
 				}
 				fs.rmSync(tombstone, { recursive: true });
+				fs.rmSync(runLaunchDir(options.asyncDirRoot, status!.runId), { recursive: true, force: true });
 				removeRunTombstoneMarker(maintenanceRoot, status!.runId);
 				result.deletedRuns += 1;
 				deletedIds.push(`run:${status!.runId}`);
@@ -878,7 +931,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 					continue;
 				}
 				const data = readJson(candidate.path);
-				const reason = resultSkipReason({ candidate, data, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, protectedRunIds, waitRunIds: waitReferences.runIds });
+				const reason = resultSkipReason({ candidate, data, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, resumableCutoff, protectedRunIds, waitRunIds: waitReferences.runIds });
 				if (reason) {
 					increment(result.skipped, reason);
 					continue;
@@ -889,7 +942,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 						continue;
 					}
 					const freshWaitReferences = parseWaitRunIds(waitSubscriptionsDir);
-					const finalReason = freshWaitReferences.safe ? resultSkipReason({ candidate, data, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
+					const finalReason = freshWaitReferences.safe ? resultSkipReason({ candidate, data, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, resumableCutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
 					if (finalReason) {
 						increment(result.skipped, `recheck-${finalReason}`);
 						continue;
@@ -906,7 +959,7 @@ export async function cleanupAsyncRetention(options: AsyncRetentionOptions): Pro
 				const tombstoneCandidate = { ...candidate, path: tombstone, kind: "tombstone" as const };
 				const recheckData = readJson(tombstone);
 				const freshWaitReferences = parseWaitRunIds(waitSubscriptionsDir);
-				const recheckReason = freshWaitReferences.safe ? resultSkipReason({ candidate: tombstoneCandidate, data: recheckData, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
+				const recheckReason = freshWaitReferences.safe ? resultSkipReason({ candidate: tombstoneCandidate, data: recheckData, asyncDirRoot: options.asyncDirRoot, resultsDir: options.resultsDir, maintenanceRoot, cutoff, resumableCutoff, protectedRunIds, waitRunIds: freshWaitReferences.runIds }) : "wait-references-unknown";
 				if (recheckReason) {
 					if (!fs.existsSync(candidate.path)) {
 						fs.renameSync(tombstone, candidate.path);

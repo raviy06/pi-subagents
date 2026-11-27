@@ -5,7 +5,7 @@ import { previewDisplayText } from "../../shared/display-text.ts";
 import { formatActivityLabel, formatParallelOutcome } from "../../shared/status-format.ts";
 import { type ActivityState, type AsyncJobStep, type AsyncParallelGroupStatus, type AsyncStatus, type CostSummary, type Details, type HostStepNode, type HostStepState, type LaunchResolvedChildExtensions, type RuntimeAcknowledgedChildExtensions, type NestedRunSummary, type SteeringStatus, type SubagentRunMode, type TimeoutRecoveryProjection, type TokenUsage, type TurnBudgetState, type UsageBudgetState, type WorktreeNaming, type WorkflowPreflight, type WorkflowGraphSnapshot } from "../../shared/types.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../shared/capability-ceiling.ts";
-import { readStatus } from "../../shared/utils.ts";
+import { isStatusAccessError, readStatus } from "../../shared/utils.ts";
 import { attachRootChildrenToSteps, buildNestedRouteIndex, findNestedRouteForRootId, type NestedRoute, projectNestedEvents } from "../shared/nested-events.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { formatRunFanoutBudget, getRunFanoutBudgetSnapshot, readRunFanoutBudgetDescriptor } from "../shared/run-fanout-budget.ts";
@@ -60,6 +60,8 @@ interface AsyncRunStepSummary {
 	currentPath?: string;
 	recentTools?: Array<{ tool: string; args: string; endMs: number }>;
 	recentOutput?: string[];
+	progressText?: string;
+	progressUpdatedAt?: number;
 	turnCount?: number;
 	toolCount?: number;
 	steering?: SteeringStatus;
@@ -174,6 +176,8 @@ interface AsyncRunListOptions {
 	adoptCompletionOwnerId?: string;
 	/** Receives the warning for a skipped corrupt terminal status, so an open TUI can show it as a notice instead of console output. */
 	onCorruptStatus?: (warning: string) => void;
+	/** Receives an active run kept in the index whose status.json this process may not read. */
+	onUnreadableActiveRun?: (runId: string, asyncDir: string) => void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -193,7 +197,8 @@ function isAsyncStatusIsolationError(asyncDir: string, error: unknown): boolean 
 // status poll, so the line repeats only when the file or the outcome changes.
 const reportedCorruptStatus = new Map<string, string>();
 
-function isolateCorruptActiveRun(asyncDir: string, runId: string, error: unknown, now?: () => number): void {
+/** Returns whether the active-run marker is still in place. */
+function isolateCorruptActiveRun(asyncDir: string, runId: string, error: unknown, now?: () => number): boolean {
 	const statusPath = path.join(asyncDir, "status.json");
 	const processTerminal = readProcessTerminal(asyncDir, { runId });
 	let markerAge: number | undefined;
@@ -205,9 +210,11 @@ function isolateCorruptActiveRun(asyncDir: string, runId: string, error: unknown
 	const markerCanBeReleased = processTerminal?.state === "observed"
 		|| (markerAge !== undefined && markerAge > DEFAULT_STALE_TERMINAL_ACTIVE_MARKER_MS);
 	let markerAction = "active marker retained because runner liveness is unknown";
+	let retained = true;
 	if (markerCanBeReleased) {
 		try {
 			releaseActiveRunIndex(asyncDir);
+			retained = false;
 			markerAction = processTerminal?.state === "observed"
 				? "active marker released after observed process-terminal proof"
 				: "stale active marker released";
@@ -224,9 +231,10 @@ function isolateCorruptActiveRun(asyncDir: string, runId: string, error: unknown
 		// A missing file still gets the line once; its message carries the cause.
 	}
 	const signature = `${fileSignature}\n${line}`;
-	if (reportedCorruptStatus.get(statusPath) === signature) return;
+	if (reportedCorruptStatus.get(statusPath) === signature) return retained;
 	reportedCorruptStatus.set(statusPath, signature);
 	console.error(line);
+	return retained;
 }
 
 function isNotFoundError(error: unknown): boolean {
@@ -312,7 +320,7 @@ function deriveAsyncActivityState(asyncDir: string, status: AsyncStatus): { acti
 	};
 }
 
-function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string }, nestedWarnings: string[] = [], nestedRoute?: NestedRoute): AsyncRunSummary {
+function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string }, nestedWarnings: string[] = []): AsyncRunSummary {
 	const statusPath = path.join(asyncDir, "status.json");
 	validateAsyncStatusLaneMetadata(status, `Invalid async status '${statusPath}'`);
 	const workflowChildren = parseWorkflowChildSummary(status.workflowChildren);
@@ -327,7 +335,6 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 	const { activityState, lastActivityAt } = deriveAsyncActivityState(asyncDir, status);
 	const processTerminal = readProcessTerminal(asyncDir, { runId: status.runId, runnerProcessInstanceId: status.processTerminal?.runnerProcessInstanceId })
 		?? sanitizeProcessTerminal(status.processTerminal, { runId: status.runId, runnerProcessInstanceId: status.processTerminal?.runnerProcessInstanceId }, path.join(asyncDir, "status.json"));
-	const nestedProjectionAllowed = nestedWarnings.length === 0;
 	// Degrade to the status-stored snapshot when the persisted budget is unavailable (e.g. removed
 	// by OS temp cleanup) instead of failing the whole run list; admission paths stay strict.
 	let runFanoutBudget: AsyncStatus["runFanoutBudget"] = status.runFanoutBudget;
@@ -340,16 +347,6 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 	const steps = status.steps ?? [];
 	const chainStepCount = status.chainStepCount ?? steps.length;
 	const parallelGroups = normalizeParallelGroups(status.parallelGroups, steps.length, chainStepCount);
-	let nestedChildren: NestedRunSummary[] = [];
-	if (nestedProjectionAllowed && nestedRoute) {
-		try {
-			// The route is resolved by the caller via buildNestedRouteIndex, so this
-			// avoids a fresh scan of the nested-events directory per run.
-			nestedChildren = projectNestedEvents(nestedRoute)?.children ?? [];
-		} catch (error) {
-			nestedWarnings.push(`Nested status unavailable: ${getErrorMessage(error)}`);
-		}
-	}
 	const summarizedSteps = steps.map((step, index) => {
 		const stepActivityState = step.activityState;
 		const stepLastActivityAt = step.lastActivityAt;
@@ -384,6 +381,8 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 			...(step.currentPath ? { currentPath: step.currentPath } : {}),
 			...(step.recentTools ? { recentTools: step.recentTools.map((tool) => ({ ...tool })) } : {}),
 			...(step.recentOutput ? { recentOutput: [...step.recentOutput] } : {}),
+			...(step.progressText ? { progressText: step.progressText } : {}),
+			...(step.progressUpdatedAt !== undefined ? { progressUpdatedAt: step.progressUpdatedAt } : {}),
 			...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
 			...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
 			...(step.steering ? { steering: step.steering } : {}),
@@ -424,7 +423,7 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 			...(step.children?.length ? { children: step.children } : {}),
 		};
 	});
-	attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, nestedChildren);
+	attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, undefined);
 	return {
 		id: status.runId || path.basename(asyncDir),
 		asyncDir,
@@ -461,7 +460,6 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 		...(hostSteps.length ? { hostSteps } : {}),
 		...(status.mode === "workflow" && status.workflowGraph ? { workflowGraph: status.workflowGraph } : {}),
 		steps: summarizedSteps,
-		...(nestedChildren.length ? { nestedChildren } : {}),
 		...(nestedWarnings.length ? { nestedWarnings } : {}),
 		...(processTerminal ? { processTerminal } : {}),
 		...(runFanoutBudget ? { runFanoutBudget } : {}),
@@ -487,6 +485,23 @@ function statusToSummary(asyncDir: string, status: AsyncStatus & { cwd?: string 
 
 export function summarizeAsyncStatus(asyncDir: string, status: AsyncStatus & { cwd?: string }): AsyncRunSummary {
 	return statusToSummary(asyncDir, status);
+}
+
+/** Projects nested children onto summaries built without them. It never reconciles descendants. */
+function attachNestedChildren(runs: AsyncRunSummary[], resolveRoute: (run: AsyncRunSummary) => NestedRoute | undefined = (run) => findNestedRouteForRootId(run.id)): void {
+	for (const run of runs) {
+		let nestedChildren: NestedRunSummary[];
+		try {
+			const route = resolveRoute(run);
+			nestedChildren = route ? projectNestedEvents(route).children : [];
+		} catch (error) {
+			run.nestedWarnings = [...(run.nestedWarnings ?? []), `Nested status unavailable: ${getErrorMessage(error)}`];
+			continue;
+		}
+		if (!nestedChildren.length) continue;
+		run.nestedChildren = nestedChildren;
+		attachRootChildrenToSteps(run.id, run.steps, nestedChildren);
+	}
 }
 
 function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
@@ -567,6 +582,7 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 	// load-time restoration (which only wants queued/running runs) skips it
 	// entirely when no active runs match.
 	let nestedRouteIndex: Map<string, NestedRoute> | undefined;
+	const reconciledRoutes = new Map<AsyncRunSummary, NestedRoute>();
 	const resolveNestedRoute = (rootRunId: string): NestedRoute | undefined => {
 		if (!includeNested) return undefined;
 		if (activeEntries.has(rootRunId)) return findNestedRouteForRootId(rootRunId);
@@ -596,7 +612,7 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 		} catch (error) {
 			observeStatus?.(null);
 			if (!activeEntries.has(entry) || !isAsyncStatusIsolationError(asyncDir, error)) throw error;
-			isolateCorruptActiveRun(asyncDir, entry, error, options.now);
+			if (isolateCorruptActiveRun(asyncDir, entry, error, options.now) && isStatusAccessError(error, asyncDir)) options.onUnreadableActiveRun?.(entry, asyncDir);
 			continue;
 		}
 		if (!status) {
@@ -626,11 +642,13 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 			} catch (error) {
 				observeStatus?.(null);
 				nestedWarnings.push(`Nested status unavailable: ${getErrorMessage(error)}`);
+				// Children that failed to reconcile are not projected.
+				nestedRoute = undefined;
 			}
 		}
 		let summary: AsyncRunSummary;
 		try {
-			summary = statusToSummary(asyncDir, status, nestedWarnings, nestedRoute);
+			summary = statusToSummary(asyncDir, status, nestedWarnings);
 		} catch (error) {
 			observeStatus?.(null);
 			if (!activeEntries.has(entry) || !isAsyncStatusIsolationError(asyncDir, error)) throw error;
@@ -638,10 +656,15 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 			continue;
 		}
 		runs.push(summary);
+		if (nestedRoute) reconciledRoutes.set(summary, nestedRoute);
 	}
 
 	const sorted = sortRuns(runs);
-	return options.limit !== undefined ? sorted.slice(0, options.limit) : sorted;
+	const listed = options.limit !== undefined ? sorted.slice(0, options.limit) : sorted;
+	// Project nested children only for the runs returned. A non-reconciling read
+	// (FleetView polls one) looks up each run's own route-index directory.
+	if (includeNested) attachNestedChildren(listed, options.reconcile === false ? undefined : (run) => reconciledRoutes.get(run));
+	return listed;
 }
 
 function formatActivityFacts(input: { activityState?: ActivityState; lastActivityAt?: number; currentTool?: string; currentToolStartedAt?: number; currentPath?: string; turnCount?: number; toolCount?: number; steering?: SteeringStatus; turnBudget?: TurnBudgetState; turnBudgetExceeded?: boolean; wrapUpRequested?: boolean }): string | undefined {
@@ -670,6 +693,7 @@ function formatStepLine(step: AsyncRunStepSummary): string {
 	const modelThinking = formatModelThinking(step.model, step.thinking);
 	if (modelThinking) parts.push(modelThinking);
 	if (step.durationMs !== undefined) parts.push(formatDuration(step.durationMs));
+	if (step.progressText && step.status === "running") parts.push(`progress: ${step.progressText}`);
 	if (step.tokens) parts.push(`${formatTokens(step.tokens.total)} tok`);
 	if (step.lane) parts.push(`lane ${step.lane.key}`);
 	if (step.worktreePath) parts.push(`worktree ${shortenPath(step.worktreePath)} · branch ${step.branch ?? "unknown"}${step.provider ? ` · provider ${step.provider}` : ""}`);
