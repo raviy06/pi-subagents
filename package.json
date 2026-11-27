@@ -111,7 +111,7 @@
   "devDependencies": {
     "@earendil-works/pi-agent-core": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/pi-coding-agent": "1.6.1",
+    "@earendil-works/pi-coding-agent": "1.2.0",
     "@earendil-works/pi-tui": "1.2.0",
     "@oxlint/plugins": "1.90.0",
     "@types/node": "26.6.5",
@@ -121,6 +121,9 @@
     "typescript": "7.0.2"
   },
   "overrides": {
-    "undici": "$undici"
+    "undici": "$undici",
+    "@earendil-works/pi-coding-agent@1.2.0": {
+      "minimatch": "11.0.3"
+    }
   }
 }
