@@ -414,16 +414,8 @@ export function projectPaneShellFlavor(platform: NodeJS.Platform, shell: string 
 
 function projectPaneCommand(message: string | undefined): string {
 	const startupMessage = message?.trim();
-	const command = getPiSpawnCommand([]);
-	const flavor = projectPaneShellFlavor(process.platform, process.env.SHELL);
-	const base = formatShellCommand(command.command, command.args, process.platform, flavor);
-	if (!startupMessage) return base;
-	if (flavor === "posix" || process.platform !== "win32") {
-		const setEnv = formatShellCommand("export", [`PI_PROJECT_PANE_MESSAGE=${startupMessage}`], process.platform, flavor);
-		return `${setEnv}; ${base} "$PI_PROJECT_PANE_MESSAGE"`;
-	}
-	const setEnv = formatShellCommand("Set-Item", ["Env:PI_PROJECT_PANE_MESSAGE", startupMessage], process.platform, flavor);
-	return `${setEnv}; ${base} $env:PI_PROJECT_PANE_MESSAGE`;
+	const command = getPiSpawnCommand(startupMessage ? [startupMessage] : []);
+	return formatShellCommand(command.command, command.args, process.platform, projectPaneShellFlavor(process.platform, process.env.SHELL));
 }
 
 function canonicalRuntimePath(value: string | undefined): string | undefined {

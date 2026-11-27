@@ -69,7 +69,15 @@ export class WorkflowScriptProcess extends EventEmitter {
 	}
 }
 
-export function createWorkflowScriptWorker(acornPath: string): Worker | WorkflowScriptProcess {
+interface WorkflowScriptWorker {
+	on(event: "error", listener: (error: unknown) => void): void;
+	on(event: "exit", listener: (code: number) => void): void;
+	on(event: "message", listener: (message: Record<string, unknown>) => void): void;
+	postMessage(message: unknown): void;
+	terminate(): Promise<number>;
+}
+
+export function createWorkflowScriptWorker(acornPath: string): WorkflowScriptWorker {
 	// Bun has no permission model. Keep its existing file worker; do not claim process isolation there.
 	return typeof process.versions.bun === "string"
 		? new Worker(WORKFLOW_WORKER_URL, { workerData: { acornPath } })

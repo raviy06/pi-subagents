@@ -52,8 +52,8 @@ describe("formatShellCommand on POSIX shells", () => {
 describe("formatShellCommand on Windows PowerShell", () => {
 	it("prefixes the call operator and preserves argument quoting", () => {
 		assert.equal(
-			formatShellCommand("C:\\Program Files\\nodejs\\node.exe", ["two words", 'say "hi"'], "win32"),
-			'& "C:\\Program Files\\nodejs\\node.exe" "two words" "say \\"hi\\""',
+			formatShellCommand("C:\\Program Files\\nodejs\\node.exe", ["two words", 'say "hi"', "it's $HOME"], "win32"),
+			`& 'C:\\Program Files\\nodejs\\node.exe' 'two words' 'say "hi"' 'it''s $HOME'`,
 		);
 	});
 });
