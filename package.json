@@ -105,7 +105,7 @@
     "acorn": "8.18.0",
     "jiti": "2.7.0",
     "undici": "8.12.3",
-    "yaml": "2.8.3"
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "1.2.0",
