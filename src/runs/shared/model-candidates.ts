@@ -1,4 +1,4 @@
-import { configuredScopes, resolveModelCandidate, resolveModelSelection, splitThinkingSuffix, type AvailableModelInfo, type ModelSelectionEvidence, type ResolveModelSelectionOptions } from "./model-resolution.ts";
+import { configuredScopes, resolveModelCandidate, resolveModelSelection, splitThinkingSuffix, type AvailableModelInfo, type KnownProviders, type ModelSelectionEvidence, type ResolveModelSelectionOptions } from "./model-resolution.ts";
 import { checkModelScope, type ModelScopeCheckRule, type ModelSource } from "./model-scope.ts";
 
 export type ModelFallbackReason = "unregistered" | "out-of-scope";
@@ -43,8 +43,9 @@ function resolveRegisteredCandidate(
 	candidate: string,
 	availableModels: AvailableModelInfo[] | undefined,
 	preferredProvider: string | undefined,
+	knownProviders?: KnownProviders,
 ): string | undefined {
-	const resolved = resolveModelCandidate(candidate, availableModels, preferredProvider);
+	const resolved = resolveModelCandidate(candidate, availableModels, preferredProvider, knownProviders);
 	if (resolved === undefined) return undefined;
 	if (!availableModels || availableModels.length === 0) return resolved;
 	const { baseModel } = splitThinkingSuffix(resolved);
@@ -60,6 +61,7 @@ export function pickModelCandidate(input: {
 	fallbacks?: readonly string[];
 	availableModels?: AvailableModelInfo[];
 	preferredProvider?: string;
+	knownProviders?: KnownProviders;
 	scopes?: readonly ModelScopeCheckRule[];
 	/** Severity source for scope checks; `inherited` lets non-strict scopes pass as the configured path does. */
 	scopeSource?: ModelSource;
@@ -70,7 +72,7 @@ export function pickModelCandidate(input: {
 	}
 	const skipped: SkippedModelCandidate[] = [];
 	for (const candidate of candidates) {
-		const resolved = resolveRegisteredCandidate(candidate, input.availableModels, input.preferredProvider);
+		const resolved = resolveRegisteredCandidate(candidate, input.availableModels, input.preferredProvider, input.knownProviders);
 		if (resolved === undefined) {
 			skipped.push({ model: candidate, reason: "unregistered" });
 			continue;
@@ -113,6 +115,7 @@ export function resolveModelSelectionWithFallbacks(
 		fallbacks,
 		availableModels,
 		preferredProvider,
+		knownProviders: selection.knownProviders,
 		scopes: configuredScopes(selection.scope),
 		scopeSource: origin === "explicit" ? "explicit" : "inherited",
 	});

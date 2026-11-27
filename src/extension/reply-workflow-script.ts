@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isUnsetPlaceholder } from "./subagent-options.ts";
 
 const WORKFLOW_FENCE = /^```(?:js|javascript) workflow[ \t]*$/;
 const PLAIN_JS_FENCE = /^```(?:js|javascript)[ \t]*$/;
@@ -23,16 +24,41 @@ export function readReplyWorkflowScript(sessionManager: Pick<ExtensionContext["s
 		const message = entry.message;
 		if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
 		if (!message.content.some((block) => block.type === "toolCall" && block.id === toolCallId)) continue;
-		return scriptFromReply(message.content);
+		return scriptFromReply(message.content, () => earlierTurnHasJsBlock(branch, index));
 	}
 	return { error: "workflow: true only works from a model subagent tool call whose assistant message contains the ```js workflow block; other callers must pass a script path such as workflow: \"./script.js\"." };
 }
 
-function scriptFromReply(content: AssistantMessage["content"]): ReplyWorkflowScript {
+/** Whether an assistant message earlier in this turn (after the last user message) holds a js block. */
+function earlierTurnHasJsBlock(branch: ReturnType<ExtensionContext["sessionManager"]["getBranch"]>, callIndex: number): boolean {
+	for (let index = callIndex - 1; index >= 0; index--) {
+		const entry = branch[index]!;
+		if (entry.type !== "message") continue;
+		if (entry.message?.role === "user") return false;
+		if (entry.message?.role !== "assistant" || !Array.isArray(entry.message.content)) continue;
+		const text = entry.message.content.flatMap((block) => block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n");
+		const { tagged, plain } = workflowBlocks(text);
+		if (tagged.length > 0 || plain.length > 0) return true;
+	}
+	return false;
+}
+
+/** Whether flattenSubagentToolOptions will read this call's options.script, which it does after dropping "null" placeholders. */
+function hasOptionsScript(options: unknown): boolean {
+	if (typeof options !== "object" || options === null || Array.isArray(options)) return false;
+	const script = (options as Record<string, unknown>).script;
+	return script !== undefined && !isUnsetPlaceholder(script);
+}
+
+function scriptFromReply(content: AssistantMessage["content"], earlierBlock: () => boolean): ReplyWorkflowScript {
+	// A call that also passes options.script runs that script, not the reply's block (#3320).
 	const replyCalls = content.filter((block) => block.type === "toolCall" && block.name === "subagent"
-		&& (block.arguments?.workflow === true || block.arguments?.workflow === "true")).length;
+		&& (block.arguments?.workflow === true || block.arguments?.workflow === "true") && !hasOptionsScript(block.arguments?.options)).length;
 	if (replyCalls > 1) return { error: `This reply has ${replyCalls} subagent calls with workflow: true; a reply can carry only one. Pass other scripts as workflow file paths.` };
-	if (!content.some((block) => block.type === "text")) return { error: `The assistant message that issued this call has no text in the session, so the reply's visible text, including any \`\`\`js workflow block, never reached it. ${SUMMARY_NOTE}` };
+	if (!content.some((block) => block.type === "text")) {
+		if (earlierBlock()) return { error: "The assistant message that issued this call has no text. A ```js block is in an earlier message of this turn, but workflow: true reads only the message that issues the call. Pass that script's source as options: { script: \"...\" } in place of workflow: true, with the call's other fields unchanged, or write the block and the call in one message." };
+		return { error: `The assistant message that issued this call has no text in the session, so no \`\`\`js workflow block reached it. ${SUMMARY_NOTE}` };
+	}
 	const text = content.flatMap((block) => block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n");
 	const { tagged, plain, unclosed } = workflowBlocks(text);
 	if (unclosed) return { error: "The script's fenced block in this reply is not closed." };
