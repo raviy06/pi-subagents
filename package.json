@@ -121,6 +121,9 @@
     "typescript": "7.0.2"
   },
   "overrides": {
-    "undici": "$undici"
+    "undici": "$undici",
+    "@earendil-works/pi-coding-agent@1.2.0": {
+      "minimatch": "11.0.3"
+    }
   }
 }
