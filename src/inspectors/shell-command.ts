@@ -1,5 +1,7 @@
 function shellQuote(value: string, platform: NodeJS.Platform): string {
-	if (platform === "win32") return `"${value.replaceAll('"', '\\"')}"`;
+	// PowerShell expands double-quoted arguments. Use literal strings and double each
+	// recognized single-quote delimiter, including the typographic variants.
+	if (platform === "win32") return `'${value.replace(/['\u2018\u2019\u201a\u201b]/g, (quote) => quote + quote)}'`;
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 

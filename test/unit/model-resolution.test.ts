@@ -86,7 +86,7 @@ describe("single model resolution", () => {
 		for (const requested of ["anthropic/claude-opus-4-8", "anthropic/claude-opus-4.8"]) {
 			assert.throws(
 				() => resolveSubagentModelOverride(requested, parent, registry, undefined, { source: "explicit", knownProviders }),
-				new RegExp(`Unknown subagent model '${requested.replace(/[./]/g, "\\$&")}'.*Did you mean 'openrouter/anthropic/claude-opus-4\\.8'`),
+				new RegExp(`Unknown subagent model '${requested.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'.*Did you mean 'openrouter/anthropic/claude-opus-4\\.8'`),
 			);
 			assert.throws(() => resolveModelSelection(requested, registry, undefined, { knownProviders }), /Unknown subagent model/);
 		}

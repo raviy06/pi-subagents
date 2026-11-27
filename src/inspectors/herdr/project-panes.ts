@@ -413,8 +413,8 @@ export function projectPaneShellFlavor(platform: NodeJS.Platform, shell: string 
 }
 
 function projectPaneCommand(message: string | undefined): string {
-	const args = message?.trim() ? [message.trim()] : [];
-	const command = getPiSpawnCommand(args);
+	const startupMessage = message?.trim();
+	const command = getPiSpawnCommand(startupMessage ? [startupMessage] : []);
 	return formatShellCommand(command.command, command.args, process.platform, projectPaneShellFlavor(process.platform, process.env.SHELL));
 }
 
