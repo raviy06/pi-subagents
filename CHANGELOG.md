@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-11-27
+
+- Sync the scoped fork from upstream v0.83.0 through [v0.90.0](https://github.com/nicobailon/pi-subagents/blob/v0.90.0/CHANGELOG.md). This release retains `subagents_enable`, `/roster`, the activity API and resolution-time model fallbacks.
+- Name child runs with `label`, run parallel workflows sequentially with `globalConcurrencyLimit: 1`, and disable session sharing with `disabledFeatures: ["session-sharing"]`.
+- Include upstream workflow retention and Windows status-file fixes. Roster capability rows retain model fallbacks alongside upstream's model availability marker.
+
 ## [0.85.0] - 2026-10-27
 
 Syncs upstream through v0.83.0 and makes the fork's activity-changed event the one
