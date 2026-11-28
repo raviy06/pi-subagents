@@ -231,7 +231,7 @@ jobs:
         id: release
         run: echo "sha=$(node -p 'require("./test/smoke/standalone-release.json").archiveSha256')" >> "$GITHUB_OUTPUT"
       # GitHub release downloads from runners return 504 for long stretches; the archive is checksum-pinned, so reuse it.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/pi-official-archive
           key: pi-official-${{ steps.release.outputs.sha }}
